@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<suite name="MSTeamsNotifierSuite" verbose="1">
+    <test name="MSTeamsNotifierTest">
+        <classes>
+            <class name="io.github.minhhoangvn.utils.AdaptiveCardsFormatTest"/>
+            <class name="io.github.minhhoangvn.client.MSTeamsWebHookClientTest"/>
+            <class name="io.github.minhhoangvn.SonarQubeMSTeamsNotifierPluginTest"/>
+        </classes>
+    </test>
+</suite>

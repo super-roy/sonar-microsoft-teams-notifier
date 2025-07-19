@@ -1,24 +1,26 @@
-package io.github.minhhoangvn.extension;
+package io.github.minhhoangvn;
 
 import io.github.minhhoangvn.client.MSTeamsWebHookClient;
 import io.github.minhhoangvn.utils.AdaptiveCardsFormat;
-import okhttp3.Response;
-import org.apache.commons.lang.StringUtils;
 import org.sonar.api.ce.posttask.PostProjectAnalysisTask;
+import org.sonar.api.config.Configuration;
 import org.sonar.api.utils.log.Logger;
 import org.sonar.api.utils.log.Loggers;
+import okhttp3.Response;
 
 import java.io.IOException;
+import java.util.Optional;
 
-public class MSTeamsPostProjectAnalysisTask implements PostProjectAnalysisTask {
+public class SonarQubeMSTeamsNotifierPlugin implements PostProjectAnalysisTask {
 
-    private static final Logger LOGGER = Loggers.get(MSTeamsPostProjectAnalysisTask.class);
+    private static final Logger LOGGER = Loggers.get(SonarQubeMSTeamsNotifierPlugin.class);
     private static final String WEBHOOK_URL_PROPERTY = "sonar.msteams.webhook.url";
     private static final String PROJECT_URL_PROPERTY = "sonar.core.serverBaseURL";
 
     @Override
     public void finished(Context context) {
-        // Use system properties and environment variables for configuration
+        // For SonarQube 10.x, we need to use a different approach to get configuration
+        // Since we can't access configuration directly, we'll use system properties
         String webhookUrl = System.getProperty(WEBHOOK_URL_PROPERTY);
         String baseUrl = System.getProperty(PROJECT_URL_PROPERTY, "");
         
@@ -33,7 +35,7 @@ public class MSTeamsPostProjectAnalysisTask implements PostProjectAnalysisTask {
             }
         }
         
-        if (StringUtils.isEmpty(webhookUrl)) {
+        if (webhookUrl == null || webhookUrl.isEmpty()) {
             LOGGER.warn("MS Teams webhook URL not configured. Set system property: {} or environment variable: SONAR_MSTEAMS_WEBHOOK_URL", WEBHOOK_URL_PROPERTY);
             return;
         }
@@ -53,9 +55,8 @@ public class MSTeamsPostProjectAnalysisTask implements PostProjectAnalysisTask {
                 if (response.isSuccessful()) {
                     LOGGER.info("Successfully sent notification to MS Teams");
                 } else {
-                    String responseBody = response.body() != null ? response.body().string() : "null";
                     LOGGER.error("Failed to send notification to MS Teams. Response code: {}, body: {}", 
-                            response.code(), responseBody);
+                            response.code(), response.body() != null ? response.body().string() : "null");
                 }
             }
         } catch (IOException e) {
@@ -67,6 +68,6 @@ public class MSTeamsPostProjectAnalysisTask implements PostProjectAnalysisTask {
 
     @Override
     public String getDescription() {
-        return "MS Teams notification extension for SonarQube analysis results";
+        return "Send SonarQube analysis results to Microsoft Teams";
     }
 }

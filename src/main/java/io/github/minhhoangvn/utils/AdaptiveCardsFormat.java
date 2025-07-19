@@ -1,9 +1,6 @@
 package io.github.minhhoangvn.utils;
 
 import lombok.NonNull;
-
-import org.json.JSONArray;
-import org.json.JSONObject;
 import org.sonar.api.ce.posttask.PostProjectAnalysisTask.ProjectAnalysis;
 import org.sonar.api.ce.posttask.QualityGate.Condition;
 
@@ -14,122 +11,132 @@ public class AdaptiveCardsFormat {
 
     public static String createMessageCardJSONPayload(
             @NonNull ProjectAnalysis analysis, String projectUrl) {
-        return createMessageCard(analysis, projectUrl).toString();
+        return createAdaptiveCardTemplate(analysis, projectUrl);
     }
 
-    private static JSONObject createMessageCard(ProjectAnalysis analysis, String projectUrl) {
-        JSONObject messageCard = new JSONObject();
-        messageCard.put("@type", "MessageCard");
-        messageCard.put("@context", "http://schema.org/extensions");
-        messageCard.put("themeColor", "0072C6");
-        messageCard.put("summary", "SonarQube Quality Gate Result");
-
-        JSONArray sections = new JSONArray();
-        sections.put(createSection(analysis));
-        messageCard.put("sections", sections);
-
-        JSONArray potentialActions = new JSONArray();
-        potentialActions.put(createOpenUriAction(projectUrl));
-        messageCard.put("potentialAction", potentialActions);
-
-        return messageCard;
-    }
-
-    private static JSONObject createSection(ProjectAnalysis analysis) {
+    private static String createAdaptiveCardTemplate(ProjectAnalysis analysis, String projectUrl) {
         String projectName = analysis.getProject().getName();
-        String taskStatus = analysis.getCeTask().getStatus().name();
-        JSONObject section = new JSONObject();
-        section.put("activityTitle", "[" + projectName + "] SonarQube Analysis Result");
-        section.put("activitySubtitle", "Status: **" + taskStatus + "**");
-        section.put(
-                "activityImage",
-                analysis.getScannerContext().getProperties().get(Constants.WEBHOOK_MESSAGE_AVATAR));
-        section.put("facts", createFacts(analysis));
-        section.put("markdown", "true");
-        return section;
+        String status = analysis.getCeTask().getStatus().name();
+        String qualityGate = getQualityGateInfo(analysis);
+        String newViolations = getMetricValue(analysis, "new_violations", "0");
+        String newCoverage = getMetricValue(analysis, "new_coverage", "N/A");
+        String newDuplicatedLinesDensity = getMetricValue(analysis, "new_duplicated_lines_density", "N/A");
+        String newSecurityHotspotsReviewed = getMetricValue(analysis, "new_security_hotspots_reviewed", "N/A");
+
+        return String.format(
+            "{\n" +
+            "    \"type\": \"AdaptiveCard\",\n" +
+            "    \"$schema\": \"http://adaptivecards.io/schemas/adaptive-card.json\",\n" +
+            "    \"version\": \"1.5\",\n" +
+            "    \"body\": [\n" +
+            "        {\n" +
+            "            \"type\": \"TextBlock\",\n" +
+            "            \"size\": \"Medium\",\n" +
+            "            \"weight\": \"Bolder\",\n" +
+            "            \"text\": \"SonarQube Analysis Result\"\n" +
+            "        },\n" +
+            "        {\n" +
+            "            \"type\": \"ColumnSet\",\n" +
+            "            \"columns\": [\n" +
+            "                {\n" +
+            "                    \"type\": \"Column\",\n" +
+            "                    \"items\": [\n" +
+            "                        {\n" +
+            "                            \"type\": \"Image\",\n" +
+            "                            \"style\": \"Person\",\n" +
+            "                            \"url\": \"https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Super_Micro_Computer_Logo.svg/330px-Super_Micro_Computer_Logo.svg.png\",\n" +
+            "                            \"altText\": \"Supermicro IT2 DevOps Team\",\n" +
+            "                            \"size\": \"Small\"\n" +
+            "                        }\n" +
+            "                    ],\n" +
+            "                    \"width\": \"auto\"\n" +
+            "                },\n" +
+            "                {\n" +
+            "                    \"type\": \"Column\",\n" +
+            "                    \"items\": [\n" +
+            "                        {\n" +
+            "                            \"type\": \"TextBlock\",\n" +
+            "                            \"weight\": \"Bolder\",\n" +
+            "                            \"text\": \"Supermicro IT2 DevOps Team\",\n" +
+            "                            \"wrap\": true\n" +
+            "                        }\n" +
+            "                    ],\n" +
+            "                    \"width\": \"stretch\"\n" +
+            "                }\n" +
+            "            ]\n" +
+            "        },\n" +
+            "        {\n" +
+            "            \"type\": \"TextBlock\",\n" +
+            "            \"text\": \"%s SonarQube Analysis Result\",\n" +
+            "            \"wrap\": true,\n" +
+            "            \"weight\": \"Bolder\",\n" +
+            "            \"color\": \"Accent\"\n" +
+            "        },\n" +
+            "        {\n" +
+            "            \"type\": \"FactSet\",\n" +
+            "            \"facts\": [\n" +
+            "                {\n" +
+            "                    \"title\": \"Status\",\n" +
+            "                    \"value\": \"%s\"\n" +
+            "                },\n" +
+            "                {\n" +
+            "                    \"title\": \"Quality Gate\",\n" +
+            "                    \"value\": \"%s\"\n" +
+            "                },\n" +
+            "                {\n" +
+            "                    \"title\": \"New Violations\",\n" +
+            "                    \"value\": \"%s\"\n" +
+            "                },\n" +
+            "                {\n" +
+            "                    \"title\": \"New Coverage\",\n" +
+            "                    \"value\": \"%s\"\n" +
+            "                },\n" +
+            "                {\n" +
+            "                    \"title\": \"New Duplicated Lines Density\",\n" +
+            "                    \"value\": \"%s\"\n" +
+            "                },\n" +
+            "                {\n" +
+            "                    \"title\": \"New Security Hotspots Reviewed\",\n" +
+            "                    \"value\": \"%s\"\n" +
+            "                }\n" +
+            "            ]\n" +
+            "        }\n" +
+            "    ],\n" +
+            "    \"actions\": [\n" +
+            "        {\n" +
+            "            \"type\": \"Action.OpenUrl\",\n" +
+            "            \"title\": \"View Analysis\",\n" +
+            "            \"url\": \"%s\"\n" +
+            "        }\n" +
+            "    ]\n" +
+            "}",
+            projectName, status, qualityGate, newViolations, newCoverage, 
+            newDuplicatedLinesDensity, newSecurityHotspotsReviewed, projectUrl
+        );
     }
 
-    private static JSONArray createFacts(ProjectAnalysis analysis) {
-        JSONArray facts = new JSONArray();
-        facts.put(createQualityGateFact(analysis));
-
-        Collection<Condition> conditions =
-                Objects.requireNonNull(analysis.getQualityGate()).getConditions();
-
-        conditions.parallelStream()
-                .forEach(
-                        condition -> {
-                            JSONObject qualityGateConditionFact = new JSONObject();
-                            String conditionName =
-                                    StringUtils.convertSnakeToTitle(condition.getMetricKey());
-                            String conditionStatus = condition.getStatus().name();
-                            String conditionStatusValue = getConditionStatusValue(condition);
-                            String conditionErrorThreshold =
-                                    getConditionErrorThreshold(conditionName, condition);
-                            String currentConditionValue =
-                                    getCurrentConditionValue(conditionName, conditionStatusValue);
-                            qualityGateConditionFact.put("name", conditionName);
-                            qualityGateConditionFact.put(
-                                    "value",
-                                    String.format(
-                                            "Status %s\nCurrent value is %s\nThreshold value %s",
-                                            conditionStatus,
-                                            currentConditionValue,
-                                            conditionErrorThreshold));
-                            qualityGateConditionFact.put(
-                                    "style", getQualityGateStyle(conditionStatus));
-                            facts.put(qualityGateConditionFact);
-                        });
-
-        return facts;
+    private static String getQualityGateInfo(ProjectAnalysis analysis) {
+        if (analysis.getQualityGate() == null) {
+            return "N/A";
+        }
+        String status = analysis.getQualityGate().getStatus().name();
+        String name = analysis.getQualityGate().getName();
+        return name + " (" + status + ")";
     }
 
-    private static JSONObject createQualityGateFact(ProjectAnalysis analysis) {
-        String qualityGateStatus =
-                Objects.requireNonNull(analysis.getQualityGate()).getStatus().name();
-        String qualityGateName = analysis.getQualityGate().getName();
-        JSONObject qualityGateFact = new JSONObject();
-        qualityGateFact.put("name", "Quality Gate");
-        qualityGateFact.put("value", qualityGateName);
-        qualityGateFact.put("style", getQualityGateStyle(qualityGateStatus));
-        return qualityGateFact;
-    }
-
-    private static String getQualityGateStyle(String qualityGateStatus) {
-        return qualityGateStatus.equals("OK") ? "Good" : "Warning";
-    }
-
-    private static JSONObject createOpenUriAction(String projectUrl) {
-        JSONObject openUriAction = new JSONObject();
-        JSONArray targets = new JSONArray();
-        targets.put(createUriTarget(projectUrl));
-        openUriAction.put("@type", "OpenUri");
-        openUriAction.put("name", "View Analysis");
-        openUriAction.put("targets", targets);
-        return openUriAction;
-    }
-
-    private static JSONObject createUriTarget(String projectUrl) {
-        JSONObject uriTarget = new JSONObject();
-        uriTarget.put("os", "default");
-        uriTarget.put("uri", projectUrl);
-        return uriTarget;
-    }
-
-    private static String getConditionStatusValue(Condition condition) {
-        return condition.getStatus().name().equals("NO_VALUE") ? "0" : condition.getValue();
-    }
-
-    private static String getConditionErrorThreshold(String conditionName, Condition condition) {
-        return conditionName.contains("Rating")
-                ? RatingMapper.getRating(condition.getErrorThreshold())
-                : condition.getErrorThreshold();
-    }
-
-    private static String getCurrentConditionValue(
-            String conditionName, String conditionStatusValue) {
-        return conditionName.contains("Rating")
-                ? RatingMapper.getRating(conditionStatusValue)
-                : conditionStatusValue;
+    private static String getMetricValue(ProjectAnalysis analysis, String metricKey, String defaultValue) {
+        if (analysis.getQualityGate() == null || analysis.getQualityGate().getConditions() == null) {
+            return defaultValue;
+        }
+        
+        Collection<Condition> conditions = analysis.getQualityGate().getConditions();
+        return conditions.stream()
+                .filter(condition -> condition.getMetricKey().equals(metricKey))
+                .findFirst()
+                .map(condition -> {
+                    String value = condition.getValue();
+                    return (value == null || "NO_VALUE".equals(condition.getStatus().name())) ? defaultValue : value;
+                })
+                .orElse(defaultValue);
     }
 }
