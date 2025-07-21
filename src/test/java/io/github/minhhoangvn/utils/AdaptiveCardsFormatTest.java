@@ -139,7 +139,7 @@ public class AdaptiveCardsFormatTest {
         when(qualityGate.getConditions()).thenReturn(Collections.emptyList());
         String projectUrl = "http://sonarqube.example.com/dashboard?id=test-project-key";
 
-        // Act
+        // Act - Use the default constructor which should use the Supermicro logo
         String result = AdaptiveCardsFormat.createMessageCardJSONPayload(projectAnalysis, projectUrl);
 
         // Assert
@@ -193,5 +193,34 @@ public class AdaptiveCardsFormatTest {
             // Expected behavior
             Assert.assertNotNull(e);
         }
+    }
+
+    @Test
+    public void testCreateMessageCardJSONPayload_WithCustomImageUrl() {
+        // Arrange
+        when(qualityGate.getConditions()).thenReturn(Collections.emptyList());
+        String projectUrl = "http://sonarqube.example.com/dashboard?id=test-project-key";
+        String customImageUrl = "https://example.com/custom-logo.png";
+
+        // Act
+        String result = AdaptiveCardsFormat.createMessageCardJSONPayload(projectAnalysis, projectUrl, customImageUrl);
+
+        // Assert
+        Assert.assertTrue(result.contains("\"url\": \"" + customImageUrl + "\""));
+        Assert.assertTrue(result.contains("\"altText\": \"Supermicro IT2 DevOps Team\""));
+    }
+
+    @Test
+    public void testCreateMessageCardJSONPayload_WithEmptyImageUrl_UsesDefault() {
+        // Arrange
+        when(qualityGate.getConditions()).thenReturn(Collections.emptyList());
+        String projectUrl = "http://sonarqube.example.com/dashboard?id=test-project-key";
+        String emptyImageUrl = "";
+
+        // Act
+        String result = AdaptiveCardsFormat.createMessageCardJSONPayload(projectAnalysis, projectUrl, emptyImageUrl);
+
+        // Assert - Should use default Supermicro logo
+        Assert.assertTrue(result.contains("\"url\": \"https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Super_Micro_Computer_Logo.svg/330px-Super_Micro_Computer_Logo.svg.png\""));
     }
 }

@@ -1,133 +1,174 @@
 package io.github.minhhoangvn.extension;
 
+import io.github.minhhoangvn.client.MSTeamsWebHookClient;
+import io.github.minhhoangvn.utils.AdaptiveCardsFormat;
 import io.github.minhhoangvn.utils.Constants;
-
-import org.apache.commons.validator.routines.UrlValidator;
-import org.jetbrains.annotations.NotNull;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.sonar.api.batch.Phase;
-import org.sonar.api.batch.Phase.Name;
-import org.sonar.api.batch.sensor.Sensor;
-import org.sonar.api.batch.sensor.SensorContext;
-import org.sonar.api.batch.sensor.SensorDescriptor;
+import okhttp3.Response;
+import org.apache.commons.lang.StringUtils;
+import org.sonar.api.ce.posttask.PostProjectAnalysisTask;
 import org.sonar.api.config.Configuration;
+import org.sonar.api.utils.log.Logger;
+import org.sonar.api.utils.log.Loggers;
 
-@Phase(name = Name.DEFAULT)
-public class MSTeamsPreProjectAnalysisTask implements Sensor {
+import java.io.IOException;
+import java.util.Optional;
 
-    private final UrlValidator urlValidator;
-    private final Configuration settings;
+public class MSTeamsPreProjectAnalysisTask implements PostProjectAnalysisTask {
 
-    /** Logger. */
-    private static final Logger LOG = LoggerFactory.getLogger(MSTeamsPreProjectAnalysisTask.class);
+    private static final Logger LOGGER = Loggers.get(MSTeamsPreProjectAnalysisTask.class);
 
-    public MSTeamsPreProjectAnalysisTask(Configuration settings) {
-        this.settings = settings;
-        this.urlValidator = new UrlValidator(UrlValidator.ALLOW_LOCAL_URLS);
+    @Override
+    public void finished(Context context) {
+        try {
+            // Get configuration from context
+            Configuration config = getConfiguration(context);
+            
+            // Check if plugin is enabled
+            boolean isEnabled = config.getBoolean(Constants.ENABLE_NOTIFY)
+                    .orElse(Constants.DEFAULT_ENABLE_NOTIFY);
+            if (!isEnabled) {
+                LOGGER.info("MS Teams notification plugin is disabled");
+                return;
+            }
+            
+            String webhookUrl = config.get(Constants.WEBHOOK_URL).orElse(null);
+            String avatarUrl = config.get(Constants.WEBHOOK_MESSAGE_AVATAR)
+                    .orElse(Constants.DEFAULT_WEBHOOK_MESSAGE_AVATAR);
+            boolean sendOnFailedOnly = config.getBoolean(Constants.WEBHOOK_SEND_ON_FAILED)
+                    .orElse(Constants.DEFAULT_WEBHOOK_SEND_ON_FAILED);
+            String baseUrl = config.get(Constants.SONAR_URL).orElse("");
+            
+            if (StringUtils.isEmpty(webhookUrl)) {
+                LOGGER.warn("MS Teams webhook URL not configured. Please configure it in Administration > Configuration > Microsoft Teams");
+                return;
+            }
+
+            ProjectAnalysis projectAnalysis = context.getProjectAnalysis();
+            
+            // Check if we should send notification based on settings
+            if (sendOnFailedOnly && !isAnalysisFailed(projectAnalysis)) {
+                LOGGER.info("Analysis passed and 'Send on failed only' is enabled. Skipping notification.");
+                return;
+            }
+            
+            String projectKey = projectAnalysis.getProject().getKey();
+            String projectUrl = buildProjectUrl(baseUrl, projectKey);
+            
+            String payload = AdaptiveCardsFormat.createMessageCardJSONPayload(
+                    projectAnalysis, projectUrl, avatarUrl);
+            
+            LOGGER.info("Sending notification to MS Teams for project: {}", 
+                    projectAnalysis.getProject().getName());
+            LOGGER.debug("Payload: {}", payload);
+            
+            MSTeamsWebHookClient client = new MSTeamsWebHookClient();
+            try (Response response = client.sendNotify(webhookUrl, payload)) {
+                if (response.isSuccessful()) {
+                    LOGGER.info("Successfully sent notification to MS Teams");
+                } else {
+                    String responseBody = response.body() != null ? 
+                            response.body().string() : "null";
+                    LOGGER.error("Failed to send notification to MS Teams. Response code: {}, body: {}", 
+                            response.code(), responseBody);
+                }
+            }
+        } catch (IOException e) {
+            LOGGER.error("Error sending notification to MS Teams", e);
+        } catch (Exception e) {
+            LOGGER.error("Unexpected error in MS Teams notification", e);
+        }
+    }
+    
+    private Configuration getConfiguration(Context context) {
+        // For SonarQube 10.x, create a wrapper for configuration access
+        return new ConfigurationWrapper(context);
+    }
+    
+    private String buildProjectUrl(String baseUrl, String projectKey) {
+        if (StringUtils.isEmpty(baseUrl)) {
+            // Try to get from environment or system properties as fallback
+            baseUrl = System.getProperty(Constants.SONAR_URL, "");
+            if (baseUrl.isEmpty()) {
+                baseUrl = System.getenv("SONAR_CORE_SERVERBASEURL");
+                if (baseUrl == null) {
+                    baseUrl = "http://localhost:9000"; // Default fallback
+                }
+            }
+        }
+        
+        // Ensure baseUrl doesn't end with slash
+        if (baseUrl.endsWith("/")) {
+            baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+        }
+        
+        return baseUrl + "/dashboard?id=" + projectKey;
+    }
+    
+    private boolean isAnalysisFailed(ProjectAnalysis projectAnalysis) {
+        return projectAnalysis.getQualityGate() != null && 
+               projectAnalysis.getQualityGate().getStatus() == 
+               org.sonar.api.ce.posttask.QualityGate.Status.ERROR;
     }
 
     @Override
-    public void describe(SensorDescriptor sensorDescriptor) {
-        sensorDescriptor.name(getClass().getName());
+    public String getDescription() {
+        return "MS Teams notification extension for SonarQube analysis results (Pre-Analysis)";
     }
-
-    @Override
-    public void execute(@NotNull SensorContext sensorContext) {
-        if (!isEnablePushResultToMSTeams(sensorContext)) {
-            LOG.info("Notify result to Microsoft Team is disabled");
-            return;
+    
+    // Wrapper class to handle configuration access
+    private static class ConfigurationWrapper implements Configuration {
+        private final Context context;
+        
+        public ConfigurationWrapper(Context context) {
+            this.context = context;
         }
-        sensorContext.addContextProperty(Constants.SONAR_URL, this.getSonarBaseUrl(sensorContext));
-        sensorContext.addContextProperty(Constants.WEBHOOK_URL, this.getWebhookUrl(sensorContext));
-        sensorContext.addContextProperty(
-                Constants.ENABLE_NOTIFY,
-                Boolean.toString(this.isEnablePushResultToMSTeams(sensorContext)));
-        sensorContext.addContextProperty(
-                Constants.WEBHOOK_SEND_ON_FAILED,
-                Boolean.toString(this.isEnablePushResultToMSTeamsWhenScanFailed(sensorContext)));
-        sensorContext.addContextProperty(
-                Constants.WEBHOOK_MESSAGE_AVATAR, this.getWebhookAvatar(sensorContext));
-    }
-
-    private String getSonarBaseUrl(SensorContext sensorContext) {
-        String settingSonarBaseUrl =
-                this.settings.get("sonar.core.serverBaseURL").orElseGet(() -> "");
-        String runtimeSonarBaseUrl =
-                sensorContext.config().get(Constants.SONAR_URL).orElseGet(() -> "");
-        if (urlValidator.isValid(runtimeSonarBaseUrl)) {
-            return runtimeSonarBaseUrl;
+        
+        @Override
+        public Optional<String> get(String key) {
+            // Try system property first
+            String value = System.getProperty(key);
+            if (value != null) {
+                return Optional.of(value);
+            }
+            
+            // Try environment variable
+            String envKey = key.replace(".", "_").toUpperCase();
+            value = System.getenv(envKey);
+            if (value != null) {
+                return Optional.of(value);
+            }
+            
+            return Optional.empty();
         }
-        if (urlValidator.isValid(settingSonarBaseUrl)) {
-            return settingSonarBaseUrl;
+        
+        @Override
+        public Optional<Boolean> getBoolean(String key) {
+            return get(key).map(Boolean::parseBoolean);
         }
-        LOG.error(
-                "Invalid Sonarqube base URL,the value of runtime argument is '{}' or the value in"
-                        + " SonarQube setting is '{}'",
-                runtimeSonarBaseUrl,
-                settingSonarBaseUrl);
-        throw new RuntimeException(
-                "Please provide Sonarqube base url through 'General-> Server base URL' config, "
-                        + "or provide through sonar.host.url in mvn command");
-    }
-
-    private String getWebhookUrl(SensorContext sensorContext) {
-        String runtimeWebhookUrl =
-                sensorContext.config().get(Constants.WEBHOOK_URL).orElseGet(() -> "");
-        String settingWebhookUrl = this.settings.get(Constants.WEBHOOK_URL).orElseGet(() -> "");
-        if (urlValidator.isValid(runtimeWebhookUrl)) {
-            return runtimeWebhookUrl;
+        
+        @Override
+        public Optional<Integer> getInt(String key) {
+            return get(key).map(Integer::parseInt);
         }
-        if (urlValidator.isValid(settingWebhookUrl)) {
-            return settingWebhookUrl;
+        
+        @Override
+        public Optional<Long> getLong(String key) {
+            return get(key).map(Long::parseLong);
         }
-        LOG.error(
-                "Invalid Microsoft Webhook URL,the value of runtime argument is '{}' or the value"
-                        + " in SonarQube setting is '{}'",
-                runtimeWebhookUrl,
-                settingWebhookUrl);
-        throw new RuntimeException(
-                "Invalid Microsoft Webhook URL,the value of runtime argument is '{}' or the value"
-                        + " in SonarQube setting is '{}'");
-    }
-
-    private String getWebhookAvatar(SensorContext sensorContext) {
-        String runtimeWebhookAvatarUrl =
-                sensorContext.config().get(Constants.WEBHOOK_MESSAGE_AVATAR).orElseGet(() -> "");
-        String webhookAvatar =
-                this.settings.get(Constants.WEBHOOK_MESSAGE_AVATAR).orElseGet(() -> "");
-        if (urlValidator.isValid(runtimeWebhookAvatarUrl)) {
-            return runtimeWebhookAvatarUrl;
+        
+        @Override
+        public Optional<Double> getDouble(String key) {
+            return get(key).map(Double::parseDouble);
         }
-        if (urlValidator.isValid(webhookAvatar)) {
-            return webhookAvatar;
+        
+        @Override
+        public String[] getStringArray(String key) {
+            return get(key).map(s -> s.split(",")).orElse(new String[0]);
         }
-        return Constants.DEFAULT_WEBHOOK_MESSAGE_AVATAR;
-    }
-
-    private boolean isEnablePushResultToMSTeams(SensorContext sensorContext) {
-        var isEnablePushResultToMSTeamsRuntime =
-                Boolean.parseBoolean(
-                        sensorContext
-                                .config()
-                                .get(Constants.ENABLE_NOTIFY)
-                                .orElseGet(() -> "false"));
-        if (isEnablePushResultToMSTeamsRuntime) {
-            return true;
+        
+        @Override
+        public boolean hasKey(String key) {
+            return get(key).isPresent();
         }
-        return this.settings.getBoolean(Constants.ENABLE_NOTIFY).orElseGet(() -> false);
-    }
-
-    private boolean isEnablePushResultToMSTeamsWhenScanFailed(SensorContext sensorContext) {
-        var isEnablePushResultToMSTeamsRuntime =
-                Boolean.parseBoolean(
-                        sensorContext
-                                .config()
-                                .get(Constants.WEBHOOK_SEND_ON_FAILED)
-                                .orElseGet(() -> "false"));
-        if (isEnablePushResultToMSTeamsRuntime) {
-            return true;
-        }
-        return this.settings.getBoolean(Constants.WEBHOOK_SEND_ON_FAILED).orElseGet(() -> false);
     }
 }

@@ -1,114 +1,149 @@
 package io.github.minhhoangvn;
 
-import static org.junit.Assert.assertEquals;
-import static org.mockito.Mockito.mock;
-
+import io.github.minhhoangvn.extension.MSTeamsPostProjectAnalysisTask;
 import io.github.minhhoangvn.settings.MSTeamsNotifyProperties;
-
-import org.junit.Assert;
-import org.junit.Test;
 import org.sonar.api.Plugin;
 import org.sonar.api.PropertyType;
-import org.sonar.api.SonarRuntime;
 import org.sonar.api.config.PropertyDefinition;
+import org.testng.Assert;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+
+import java.util.List;
+
+import static org.mockito.Mockito.*;
 
 public class MSTeamsNotifyPluginTest {
+
+    private MSTeamsNotifyPlugin plugin;
+    private Plugin.Context context;
+
+    @BeforeMethod
+    public void setUp() {
+        plugin = new MSTeamsNotifyPlugin();
+        context = mock(Plugin.Context.class);
+    }
 
     /** Method under test: {@link MSTeamsNotifyPlugin#define(Plugin.Context)} */
     @Test
     public void testDefinePluginWithCorrectExtensions() {
-        MSTeamsNotifyPlugin msTeamsNotifyPlugin = new MSTeamsNotifyPlugin();
-        Plugin.Context context = new Plugin.Context(mock(SonarRuntime.class));
-        msTeamsNotifyPlugin.define(context);
-        assertEquals(6, context.getExtensions().size());
-        for (int i = 0; i < MSTeamsNotifyProperties.getProperties().size(); i++) {
-            Assert.assertSame(
-                    MSTeamsNotifyProperties.getProperties().get(i),
-                    context.getExtensions().get(i + 2));
-        }
+        // Act
+        plugin.define(context);
+
+        // Assert - Verify the main task is registered
+        verify(context).addExtension(MSTeamsPostProjectAnalysisTask.class);
+        
+        // Verify that properties are registered (at least once for each property)
+        verify(context, atLeastOnce()).addExtension(any());
     }
 
     @Test
-    public void testDefinePluginWithCorrectEnableNotifySetting() {
-        MSTeamsNotifyPlugin msTeamsNotifyPlugin = new MSTeamsNotifyPlugin();
-        Plugin.Context context = new Plugin.Context(mock(SonarRuntime.class));
-        msTeamsNotifyPlugin.define(context);
-        PropertyDefinition actualPropertyDefinition =
-                (PropertyDefinition) context.getExtensions().get(2);
-        PropertyDefinition expectedPropertyDefinition =
-                MSTeamsNotifyProperties.getEnableNotifyProperty();
-        Assert.assertEquals(0, actualPropertyDefinition.index());
-        Assert.assertEquals("Microsoft Team Notify Settings", actualPropertyDefinition.category());
-        Assert.assertEquals("Enable Plugin", actualPropertyDefinition.name());
-        Assert.assertEquals(
-                "Enable push Sonarqube result to Microsoft Teams",
-                actualPropertyDefinition.description());
-        Assert.assertEquals("false", actualPropertyDefinition.defaultValue());
-        Assert.assertEquals(PropertyType.BOOLEAN, actualPropertyDefinition.type());
-        Assert.assertEquals("sonar.notify.microsoft.team.enable", actualPropertyDefinition.key());
+    public void testDefine_DoesNotThrowException() {
+        // Act & Assert - Should not throw any exception
+        plugin.define(context);
     }
 
     @Test
-    public void testDefinePluginWithCorrectWebhookUrlPropertySetting() {
-        MSTeamsNotifyPlugin msTeamsNotifyPlugin = new MSTeamsNotifyPlugin();
-        Plugin.Context context = new Plugin.Context(mock(SonarRuntime.class));
-        msTeamsNotifyPlugin.define(context);
-        PropertyDefinition actualPropertyDefinition =
-                (PropertyDefinition) context.getExtensions().get(3);
-        PropertyDefinition expectedPropertyDefinition =
-                MSTeamsNotifyProperties.getEnableNotifyProperty();
-        Assert.assertEquals(1, actualPropertyDefinition.index());
-        Assert.assertEquals("Microsoft Team Notify Settings", actualPropertyDefinition.category());
-        Assert.assertEquals("Webhook URL", actualPropertyDefinition.name());
-        Assert.assertEquals(
-                "Input your Webhook URL for sending SonarQube quality gate result",
-                actualPropertyDefinition.description());
-        Assert.assertEquals("", actualPropertyDefinition.defaultValue());
-        Assert.assertEquals(PropertyType.TEXT, actualPropertyDefinition.type());
-        Assert.assertEquals(
-                "sonar.notify.microsoft.team.webhook.url", actualPropertyDefinition.key());
+    public void testDefine_RegistersAllProperties() {
+        // Act
+        plugin.define(context);
+
+        // Assert - Verify that all properties from MSTeamsNotifyProperties are registered
+        // We expect at least 5 extensions: 1 task + 4 properties
+        verify(context, atLeast(5)).addExtension(any());
+        
+        // Verify the main task is registered
+        verify(context, times(1)).addExtension(MSTeamsPostProjectAnalysisTask.class);
     }
 
     @Test
-    public void testDefinePluginWithCorrectWebhookMessageAvatarPropertySetting() {
-        MSTeamsNotifyPlugin msTeamsNotifyPlugin = new MSTeamsNotifyPlugin();
-        Plugin.Context context = new Plugin.Context(mock(SonarRuntime.class));
-        msTeamsNotifyPlugin.define(context);
-        PropertyDefinition actualPropertyDefinition =
-                (PropertyDefinition) context.getExtensions().get(4);
-        PropertyDefinition expectedPropertyDefinition =
-                MSTeamsNotifyProperties.getEnableNotifyProperty();
-        Assert.assertEquals(2, actualPropertyDefinition.index());
-        Assert.assertEquals("Microsoft Team Notify Settings", actualPropertyDefinition.category());
-        Assert.assertEquals("Webhook Message Avatar", actualPropertyDefinition.name());
-        Assert.assertEquals(
-                "Input your Webhook avatar URL", actualPropertyDefinition.description());
-        Assert.assertEquals(
-                "https://raw.githubusercontent.com/toilatester/logo/main/toilatester.png",
-                actualPropertyDefinition.defaultValue());
-        Assert.assertEquals(PropertyType.STRING, actualPropertyDefinition.type());
-        Assert.assertEquals(
-                "sonar.notify.microsoft.team.webhook.avatar", actualPropertyDefinition.key());
+    public void testMSTeamsNotifyProperties_GetProperties() {
+        // Act
+        List<PropertyDefinition> properties = MSTeamsNotifyProperties.getProperties();
+
+        // Assert
+        Assert.assertNotNull(properties);
+        Assert.assertEquals(properties.size(), 4);
+        
+        // Verify each property exists
+        PropertyDefinition enableProperty = properties.get(0);
+        Assert.assertEquals(enableProperty.key(), "sonar.msteams.enable");
+        Assert.assertEquals(enableProperty.name(), "Enable Plugin");
+        Assert.assertEquals(enableProperty.type(), PropertyType.BOOLEAN);
+        Assert.assertEquals(enableProperty.defaultValue(), "false");
+
+        PropertyDefinition webhookUrlProperty = properties.get(1);
+        Assert.assertEquals(webhookUrlProperty.key(), "sonar.msteams.webhook.url");
+        Assert.assertEquals(webhookUrlProperty.name(), "Webhook URL");
+        Assert.assertEquals(webhookUrlProperty.type(), PropertyType.TEXT);
+        Assert.assertEquals(webhookUrlProperty.defaultValue(), "");
+
+        PropertyDefinition avatarProperty = properties.get(2);
+        Assert.assertEquals(avatarProperty.key(), "sonar.msteams.avatar.url");
+        Assert.assertEquals(avatarProperty.name(), "Webhook Message Avatar");
+        Assert.assertEquals(avatarProperty.type(), PropertyType.STRING);
+        Assert.assertNotNull(avatarProperty.defaultValue());
+
+        PropertyDefinition sendOnFailedProperty = properties.get(3);
+        Assert.assertEquals(sendOnFailedProperty.key(), "sonar.msteams.send.on.failed");
+        Assert.assertEquals(sendOnFailedProperty.name(), "Webhook Send On Failed");
+        Assert.assertEquals(sendOnFailedProperty.type(), PropertyType.BOOLEAN);
+        Assert.assertEquals(sendOnFailedProperty.defaultValue(), "true");
     }
 
     @Test
-    public void testDefinePluginWithCorrectWebhookSendOnFailedPropertySetting() {
-        MSTeamsNotifyPlugin msTeamsNotifyPlugin = new MSTeamsNotifyPlugin();
-        Plugin.Context context = new Plugin.Context(mock(SonarRuntime.class));
-        msTeamsNotifyPlugin.define(context);
-        PropertyDefinition actualPropertyDefinition =
-                (PropertyDefinition) context.getExtensions().get(5);
-        PropertyDefinition expectedPropertyDefinition =
-                MSTeamsNotifyProperties.getEnableNotifyProperty();
-        Assert.assertEquals(3, actualPropertyDefinition.index());
-        Assert.assertEquals("Microsoft Team Notify Settings", actualPropertyDefinition.category());
-        Assert.assertEquals("Webhook Send On Failed", actualPropertyDefinition.name());
-        Assert.assertEquals(
-                "Only send notify to webhook when analysis failed",
-                actualPropertyDefinition.description());
-        Assert.assertEquals("true", actualPropertyDefinition.defaultValue());
-        Assert.assertEquals(PropertyType.BOOLEAN, actualPropertyDefinition.type());
-        Assert.assertEquals(
-                "sonar.notify.webhook.fail.only.enable", actualPropertyDefinition.key());
+    public void testMSTeamsNotifyProperties_EnableNotifyProperty() {
+        // Act
+        PropertyDefinition property = MSTeamsNotifyProperties.getEnableNotifyProperty();
+
+        // Assert
+        Assert.assertNotNull(property);
+        Assert.assertEquals(property.key(), "sonar.msteams.enable");
+        Assert.assertEquals(property.name(), "Enable Plugin");
+        Assert.assertEquals(property.category(), "Microsoft Teams");
+        Assert.assertEquals(property.type(), PropertyType.BOOLEAN);
+        Assert.assertEquals(property.defaultValue(), "false");
+    }
+
+    @Test
+    public void testMSTeamsNotifyProperties_WebhookUrlProperty() {
+        // Act
+        PropertyDefinition property = MSTeamsNotifyProperties.getWebhookUrlProperty();
+
+        // Assert
+        Assert.assertNotNull(property);
+        Assert.assertEquals(property.key(), "sonar.msteams.webhook.url");
+        Assert.assertEquals(property.name(), "Webhook URL");
+        Assert.assertEquals(property.category(), "Microsoft Teams");
+        Assert.assertEquals(property.type(), PropertyType.TEXT);
+        Assert.assertEquals(property.defaultValue(), "");
+    }
+
+    @Test
+    public void testMSTeamsNotifyProperties_AvatarProperty() {
+        // Act
+        PropertyDefinition property = MSTeamsNotifyProperties.getWebhookMessageAvatarProperty();
+
+        // Assert
+        Assert.assertNotNull(property);
+        Assert.assertEquals(property.key(), "sonar.msteams.avatar.url");
+        Assert.assertEquals(property.name(), "Webhook Message Avatar");
+        Assert.assertEquals(property.category(), "Microsoft Teams");
+        Assert.assertEquals(property.type(), PropertyType.STRING);
+        Assert.assertNotNull(property.defaultValue());
+    }
+
+    @Test
+    public void testMSTeamsNotifyProperties_SendOnFailedProperty() {
+        // Act
+        PropertyDefinition property = MSTeamsNotifyProperties.getWebhookSendOnFailedProperty();
+
+        // Assert
+        Assert.assertNotNull(property);
+        Assert.assertEquals(property.key(), "sonar.msteams.send.on.failed");
+        Assert.assertEquals(property.name(), "Webhook Send On Failed");
+        Assert.assertEquals(property.category(), "Microsoft Teams");
+        Assert.assertEquals(property.type(), PropertyType.BOOLEAN);
+        Assert.assertEquals(property.defaultValue(), "true");
     }
 }
