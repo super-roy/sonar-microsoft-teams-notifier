@@ -12,8 +12,8 @@ public class Constants {
     public static final String DEFAULT_WEBHOOK_MESSAGE_AVATAR = "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Super_Micro_Computer_Logo.svg/330px-Super_Micro_Computer_Logo.svg.png";
     
     // Default values
-    public static final boolean DEFAULT_ENABLE_NOTIFY = false;
-    public static final boolean DEFAULT_WEBHOOK_SEND_ON_FAILED = true;
+    public static final boolean DEFAULT_ENABLE_NOTIFY = true;
+    public static final boolean DEFAULT_WEBHOOK_SEND_ON_FAILED = false;
     
     private Constants() {
         // Utility class - prevent instantiation

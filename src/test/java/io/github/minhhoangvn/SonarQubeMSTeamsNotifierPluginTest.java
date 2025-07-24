@@ -2,7 +2,9 @@ package io.github.minhhoangvn;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
+import io.github.minhhoangvn.config.MSTeamsConfigurationProvider;
 import io.github.minhhoangvn.extension.MSTeamsPostProjectAnalysisTask;
+import io.github.minhhoangvn.utils.Constants;
 import org.sonar.api.ce.posttask.PostProjectAnalysisTask.Context;
 import org.sonar.api.ce.posttask.PostProjectAnalysisTask.ProjectAnalysis;
 import org.sonar.api.ce.posttask.Project;
@@ -32,7 +34,16 @@ public class SonarQubeMSTeamsNotifierPluginTest {
         wireMockServer = new WireMockServer(WireMockConfiguration.options().dynamicPort());
         wireMockServer.start();
 
-        plugin = new MSTeamsPostProjectAnalysisTask();
+        // Create a mock config provider
+        MSTeamsConfigurationProvider mockConfigProvider = mock(MSTeamsConfigurationProvider.class);
+        when(mockConfigProvider.isEnabled()).thenReturn(true);
+        when(mockConfigProvider.getWebhookUrl()).thenReturn("http://localhost:" + wireMockServer.port() + "/webhook");
+        when(mockConfigProvider.getAvatarUrl()).thenReturn(Constants.DEFAULT_WEBHOOK_MESSAGE_AVATAR);
+        when(mockConfigProvider.getSendOnFailedOnly()).thenReturn(false);
+        when(mockConfigProvider.getBaseUrl()).thenReturn("http://sonarqube.example.com");
+
+        plugin = new MSTeamsPostProjectAnalysisTask(mockConfigProvider);
+        
         context = mock(Context.class);
         projectAnalysis = mock(ProjectAnalysis.class);
         project = mock(Project.class);
@@ -67,14 +78,8 @@ public class SonarQubeMSTeamsNotifierPluginTest {
 
     @Test
     public void testFinished_WithValidConfiguration_SendsNotification() {
-        // Arrange
-        String webhookUrl = "http://localhost:" + wireMockServer.port() + "/webhook";
-        String baseUrl = "http://sonarqube.example.com";
-
-        System.setProperty("sonar.msteams.enable", "true");
-        System.setProperty("sonar.msteams.webhook.url", webhookUrl);
-        System.setProperty("sonar.core.serverBaseURL", baseUrl);
-        System.setProperty("sonar.msteams.send.on.failed", "false");
+        // Arrange - The mock config provider is already set up in setUp()
+        // We don't need to set system properties anymore since we're using mocked config
 
         wireMockServer.stubFor(post(urlEqualTo("/webhook"))
                 .withHeader("Content-Type", containing("application/json"))
@@ -98,16 +103,18 @@ public class SonarQubeMSTeamsNotifierPluginTest {
 
     @Test
     public void testFinished_WithPluginDisabled_DoesNotSendNotification() {
-        // Arrange - Plugin disabled
-        String webhookUrl = "http://localhost:" + wireMockServer.port() + "/webhook";
-        String baseUrl = "http://sonarqube.example.com";
-
-        System.setProperty("sonar.msteams.enable", "false");
-        System.setProperty("sonar.msteams.webhook.url", webhookUrl);
-        System.setProperty("sonar.core.serverBaseURL", baseUrl);
+        // Arrange - Update the mock to disable the plugin
+        MSTeamsConfigurationProvider disabledMockConfigProvider = mock(MSTeamsConfigurationProvider.class);
+        when(disabledMockConfigProvider.isEnabled()).thenReturn(false);
+        when(disabledMockConfigProvider.getWebhookUrl()).thenReturn("http://localhost:" + wireMockServer.port() + "/webhook");
+        when(disabledMockConfigProvider.getAvatarUrl()).thenReturn(Constants.DEFAULT_WEBHOOK_MESSAGE_AVATAR);
+        when(disabledMockConfigProvider.getSendOnFailedOnly()).thenReturn(false);
+        when(disabledMockConfigProvider.getBaseUrl()).thenReturn("http://sonarqube.example.com");
+        
+        MSTeamsPostProjectAnalysisTask disabledPlugin = new MSTeamsPostProjectAnalysisTask(disabledMockConfigProvider);
 
         // Act
-        plugin.finished(context);
+        disabledPlugin.finished(context);
 
         // Assert
         wireMockServer.verify(0, postRequestedFor(urlMatching(".*")));
@@ -115,12 +122,18 @@ public class SonarQubeMSTeamsNotifierPluginTest {
 
     @Test
     public void testFinished_WithoutWebhookUrl_DoesNotSendNotification() {
-        // Arrange - No webhook URL set but plugin enabled
-        System.setProperty("sonar.msteams.enable", "true");
-        System.setProperty("sonar.core.serverBaseURL", "http://sonarqube.example.com");
+        // Arrange - Mock with empty webhook URL
+        MSTeamsConfigurationProvider emptyUrlMockConfigProvider = mock(MSTeamsConfigurationProvider.class);
+        when(emptyUrlMockConfigProvider.isEnabled()).thenReturn(true);
+        when(emptyUrlMockConfigProvider.getWebhookUrl()).thenReturn("");
+        when(emptyUrlMockConfigProvider.getAvatarUrl()).thenReturn(Constants.DEFAULT_WEBHOOK_MESSAGE_AVATAR);
+        when(emptyUrlMockConfigProvider.getSendOnFailedOnly()).thenReturn(false);
+        when(emptyUrlMockConfigProvider.getBaseUrl()).thenReturn("http://sonarqube.example.com");
+        
+        MSTeamsPostProjectAnalysisTask emptyUrlPlugin = new MSTeamsPostProjectAnalysisTask(emptyUrlMockConfigProvider);
 
         // Act
-        plugin.finished(context);
+        emptyUrlPlugin.finished(context);
 
         // Assert
         wireMockServer.verify(0, postRequestedFor(urlMatching(".*")));
@@ -128,13 +141,18 @@ public class SonarQubeMSTeamsNotifierPluginTest {
 
     @Test
     public void testFinished_WithEmptyWebhookUrl_DoesNotSendNotification() {
-        // Arrange
-        System.setProperty("sonar.msteams.enable", "true");
-        System.setProperty("sonar.msteams.webhook.url", "");
-        System.setProperty("sonar.core.serverBaseURL", "http://sonarqube.example.com");
+        // Arrange - This is the same as the previous test
+        MSTeamsConfigurationProvider emptyUrlMockConfigProvider = mock(MSTeamsConfigurationProvider.class);
+        when(emptyUrlMockConfigProvider.isEnabled()).thenReturn(true);
+        when(emptyUrlMockConfigProvider.getWebhookUrl()).thenReturn("");
+        when(emptyUrlMockConfigProvider.getAvatarUrl()).thenReturn(Constants.DEFAULT_WEBHOOK_MESSAGE_AVATAR);
+        when(emptyUrlMockConfigProvider.getSendOnFailedOnly()).thenReturn(false);
+        when(emptyUrlMockConfigProvider.getBaseUrl()).thenReturn("http://sonarqube.example.com");
+        
+        MSTeamsPostProjectAnalysisTask emptyUrlPlugin = new MSTeamsPostProjectAnalysisTask(emptyUrlMockConfigProvider);
 
         // Act
-        plugin.finished(context);
+        emptyUrlPlugin.finished(context);
 
         // Assert
         wireMockServer.verify(0, postRequestedFor(urlMatching(".*")));
@@ -142,14 +160,15 @@ public class SonarQubeMSTeamsNotifierPluginTest {
 
     @Test
     public void testFinished_WithFailedQualityGateAndSendOnFailedOnly_SendsNotification() {
-        // Arrange
-        String webhookUrl = "http://localhost:" + wireMockServer.port() + "/webhook";
-        String baseUrl = "http://sonarqube.example.com";
-
-        System.setProperty("sonar.msteams.enable", "true");
-        System.setProperty("sonar.msteams.webhook.url", webhookUrl);
-        System.setProperty("sonar.core.serverBaseURL", baseUrl);
-        System.setProperty("sonar.msteams.send.on.failed", "true");
+        // Arrange - Mock with send on failed only
+        MSTeamsConfigurationProvider sendOnFailedMockConfigProvider = mock(MSTeamsConfigurationProvider.class);
+        when(sendOnFailedMockConfigProvider.isEnabled()).thenReturn(true);
+        when(sendOnFailedMockConfigProvider.getWebhookUrl()).thenReturn("http://localhost:" + wireMockServer.port() + "/webhook");
+        when(sendOnFailedMockConfigProvider.getAvatarUrl()).thenReturn(Constants.DEFAULT_WEBHOOK_MESSAGE_AVATAR);
+        when(sendOnFailedMockConfigProvider.getSendOnFailedOnly()).thenReturn(true);
+        when(sendOnFailedMockConfigProvider.getBaseUrl()).thenReturn("http://sonarqube.example.com");
+        
+        MSTeamsPostProjectAnalysisTask sendOnFailedPlugin = new MSTeamsPostProjectAnalysisTask(sendOnFailedMockConfigProvider);
         
         when(ceTask.getStatus()).thenReturn(CeTask.Status.FAILED);
         when(qualityGate.getStatus()).thenReturn(QualityGate.Status.ERROR);
@@ -162,7 +181,7 @@ public class SonarQubeMSTeamsNotifierPluginTest {
                         .withBody("1")));
 
         // Act
-        plugin.finished(context);
+        sendOnFailedPlugin.finished(context);
 
         // Assert
         wireMockServer.verify(postRequestedFor(urlEqualTo("/webhook")));
@@ -170,21 +189,22 @@ public class SonarQubeMSTeamsNotifierPluginTest {
 
     @Test
     public void testFinished_WithPassedQualityGateAndSendOnFailedOnly_DoesNotSendNotification() {
-        // Arrange
-        String webhookUrl = "http://localhost:" + wireMockServer.port() + "/webhook";
-        String baseUrl = "http://sonarqube.example.com";
-
-        System.setProperty("sonar.msteams.enable", "true");
-        System.setProperty("sonar.msteams.webhook.url", webhookUrl);
-        System.setProperty("sonar.core.serverBaseURL", baseUrl);
-        System.setProperty("sonar.msteams.send.on.failed", "true");
+        // Arrange - Mock with send on failed only, but quality gate passes
+        MSTeamsConfigurationProvider sendOnFailedMockConfigProvider = mock(MSTeamsConfigurationProvider.class);
+        when(sendOnFailedMockConfigProvider.isEnabled()).thenReturn(true);
+        when(sendOnFailedMockConfigProvider.getWebhookUrl()).thenReturn("http://localhost:" + wireMockServer.port() + "/webhook");
+        when(sendOnFailedMockConfigProvider.getAvatarUrl()).thenReturn(Constants.DEFAULT_WEBHOOK_MESSAGE_AVATAR);
+        when(sendOnFailedMockConfigProvider.getSendOnFailedOnly()).thenReturn(true);
+        when(sendOnFailedMockConfigProvider.getBaseUrl()).thenReturn("http://sonarqube.example.com");
+        
+        MSTeamsPostProjectAnalysisTask sendOnFailedPlugin = new MSTeamsPostProjectAnalysisTask(sendOnFailedMockConfigProvider);
         
         // Quality gate passes
         when(ceTask.getStatus()).thenReturn(CeTask.Status.SUCCESS);
         when(qualityGate.getStatus()).thenReturn(QualityGate.Status.OK);
 
         // Act
-        plugin.finished(context);
+        sendOnFailedPlugin.finished(context);
 
         // Assert
         wireMockServer.verify(0, postRequestedFor(urlMatching(".*")));
@@ -192,15 +212,7 @@ public class SonarQubeMSTeamsNotifierPluginTest {
 
     @Test
     public void testFinished_WithServerError_HandlesGracefully() {
-        // Arrange
-        String webhookUrl = "http://localhost:" + wireMockServer.port() + "/webhook";
-        String baseUrl = "http://sonarqube.example.com";
-
-        System.setProperty("sonar.msteams.enable", "true");
-        System.setProperty("sonar.msteams.webhook.url", webhookUrl);
-        System.setProperty("sonar.core.serverBaseURL", baseUrl);
-        System.setProperty("sonar.msteams.send.on.failed", "false");
-
+        // Arrange - Use the default setup
         wireMockServer.stubFor(post(urlEqualTo("/webhook"))
                 .willReturn(aResponse()
                         .withStatus(500)
@@ -224,16 +236,16 @@ public class SonarQubeMSTeamsNotifierPluginTest {
 
     @Test
     public void testFinished_WithCustomAvatarUrl_SendsNotification() {
-        // Arrange
-        String webhookUrl = "http://localhost:" + wireMockServer.port() + "/webhook";
-        String baseUrl = "http://sonarqube.example.com";
+        // Arrange - Mock with custom avatar
         String customAvatarUrl = "https://example.com/custom-avatar.png";
-
-        System.setProperty("sonar.msteams.enable", "true");
-        System.setProperty("sonar.msteams.webhook.url", webhookUrl);
-        System.setProperty("sonar.core.serverBaseURL", baseUrl);
-        System.setProperty("sonar.msteams.avatar.url", customAvatarUrl);
-        System.setProperty("sonar.msteams.send.on.failed", "false");
+        MSTeamsConfigurationProvider customAvatarMockConfigProvider = mock(MSTeamsConfigurationProvider.class);
+        when(customAvatarMockConfigProvider.isEnabled()).thenReturn(true);
+        when(customAvatarMockConfigProvider.getWebhookUrl()).thenReturn("http://localhost:" + wireMockServer.port() + "/webhook");
+        when(customAvatarMockConfigProvider.getAvatarUrl()).thenReturn(customAvatarUrl);
+        when(customAvatarMockConfigProvider.getSendOnFailedOnly()).thenReturn(false);
+        when(customAvatarMockConfigProvider.getBaseUrl()).thenReturn("http://sonarqube.example.com");
+        
+        MSTeamsPostProjectAnalysisTask customAvatarPlugin = new MSTeamsPostProjectAnalysisTask(customAvatarMockConfigProvider);
 
         wireMockServer.stubFor(post(urlEqualTo("/webhook"))
                 .withRequestBody(containing("\"url\": \"" + customAvatarUrl + "\""))
@@ -242,7 +254,7 @@ public class SonarQubeMSTeamsNotifierPluginTest {
                         .withBody("1")));
 
         // Act
-        plugin.finished(context);
+        customAvatarPlugin.finished(context);
 
         // Assert
         wireMockServer.verify(postRequestedFor(urlEqualTo("/webhook"))
@@ -251,19 +263,10 @@ public class SonarQubeMSTeamsNotifierPluginTest {
 
     @Test
     public void testFinished_WithDefaultAvatar_SendsNotification() {
-        // Arrange
-        String webhookUrl = "http://localhost:" + wireMockServer.port() + "/webhook";
-        String baseUrl = "http://sonarqube.example.com";
-
-        System.setProperty("sonar.msteams.enable", "true");
-        System.setProperty("sonar.msteams.webhook.url", webhookUrl);
-        System.setProperty("sonar.core.serverBaseURL", baseUrl);
-        System.setProperty("sonar.msteams.send.on.failed", "false");
-        // Don't set avatar URL - should use default
+        // Arrange - Use the default setup which already has the default avatar
 
         wireMockServer.stubFor(post(urlEqualTo("/webhook"))
-                // Update this to expect the Supermicro logo URL instead of toilatester
-                .withRequestBody(containing("\"url\": \"https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Super_Micro_Computer_Logo.svg/330px-Super_Micro_Computer_Logo.svg.png\""))
+                .withRequestBody(containing("\"url\": \"" + Constants.DEFAULT_WEBHOOK_MESSAGE_AVATAR + "\""))
                 .willReturn(aResponse()
                         .withStatus(200)
                         .withBody("1")));
@@ -273,6 +276,28 @@ public class SonarQubeMSTeamsNotifierPluginTest {
 
         // Assert
         wireMockServer.verify(postRequestedFor(urlEqualTo("/webhook"))
-                .withRequestBody(containing("\"url\": \"https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Super_Micro_Computer_Logo.svg/330px-Super_Micro_Computer_Logo.svg.png\"")));
+                .withRequestBody(containing("\"url\": \"" + Constants.DEFAULT_WEBHOOK_MESSAGE_AVATAR + "\"")));
+    }
+
+    @Test
+    public void testDebug_CheckSystemProperties() {
+        // This test is mainly for debugging - the mock setup handles configuration now
+        System.out.println("=== Mock Configuration Debug ===");
+        System.out.println("Plugin enabled: " + plugin.toString());
+        
+        wireMockServer.stubFor(post(urlEqualTo("/webhook"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withBody("1")));
+
+        // Act
+        plugin.finished(context);
+
+        // Print the mock server's request log
+        System.out.println("=== WireMock Request Log ===");
+        wireMockServer.getAllServeEvents().forEach(event -> {
+            System.out.println("Request: " + event.getRequest().getMethod() + " " + event.getRequest().getUrl());
+            System.out.println("Body: " + event.getRequest().getBodyAsString());
+        });
     }
 }
