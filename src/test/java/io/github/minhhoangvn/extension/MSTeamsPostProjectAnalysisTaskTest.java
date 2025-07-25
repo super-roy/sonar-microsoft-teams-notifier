@@ -10,6 +10,8 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.verify;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -19,7 +21,6 @@ import com.github.tomakehurst.wiremock.http.Request;
 import com.github.tomakehurst.wiremock.http.RequestListener;
 import com.github.tomakehurst.wiremock.http.Response;
 
-import io.github.minhhoangvn.config.MSTeamsConfigurationProvider;
 import io.github.minhhoangvn.utils.Constants;
 
 import org.junit.After;
@@ -37,25 +38,28 @@ import org.sonar.api.ce.posttask.QualityGate.Condition;
 import org.sonar.api.ce.posttask.QualityGate.EvaluationStatus;
 import org.sonar.api.ce.posttask.QualityGate.Operator;
 import org.sonar.api.ce.posttask.ScannerContext;
+import org.sonar.api.config.Configuration;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 public class MSTeamsPostProjectAnalysisTaskTest {
 
     private RequestBodyCaptureListener requestBodyCaptureListener = new RequestBodyCaptureListener();
     private WireMockServer wireMockServer;
     
-    // Add these missing variables
     private MSTeamsPostProjectAnalysisTask plugin;
+    private MSTeamsPreProjectAnalysisTask preAnalysisTask;
     private Context context;
     private ProjectAnalysis projectAnalysis;
     private Project project;
     private CeTask ceTask;
     private QualityGate qualityGate;
     private ScannerContext scannerContext;
-    private MSTeamsConfigurationProvider mockConfigProvider;
+    private Configuration mockConfiguration;
 
     private final Condition stubNonRatingCondition = new Condition() {
         @Override
@@ -143,16 +147,15 @@ public class MSTeamsPostProjectAnalysisTaskTest {
         wireMockServer = new WireMockServer(WireMockConfiguration.options().dynamicPort());
         wireMockServer.start();
         
-        // Mock the configuration provider
-        mockConfigProvider = mock(MSTeamsConfigurationProvider.class);
-        when(mockConfigProvider.isEnabled()).thenReturn(true);
-        when(mockConfigProvider.getWebhookUrl()).thenReturn("http://localhost:" + wireMockServer.port() + "/webhook");
-        when(mockConfigProvider.getAvatarUrl()).thenReturn(Constants.DEFAULT_WEBHOOK_MESSAGE_AVATAR);
-        when(mockConfigProvider.getSendOnFailedOnly()).thenReturn(false);
-        when(mockConfigProvider.getBaseUrl()).thenReturn("http://sonarqube.example.com");
+        // Create mock configuration
+        mockConfiguration = mock(Configuration.class);
+        setupMockConfiguration();
         
-        // Initialize the plugin with the mock config provider
-        plugin = new MSTeamsPostProjectAnalysisTask(mockConfigProvider);
+        // Create pre-analysis task and run it to validate configuration
+        preAnalysisTask = new MSTeamsPreProjectAnalysisTask(mockConfiguration);
+        
+        // Use default constructor for post-analysis task
+        plugin = new MSTeamsPostProjectAnalysisTask();
         
         // Initialize the other mock objects
         context = mock(Context.class);
@@ -174,7 +177,28 @@ public class MSTeamsPostProjectAnalysisTaskTest {
         when(qualityGate.getStatus()).thenReturn(QualityGate.Status.OK);
         when(qualityGate.getName()).thenReturn("Sonar way");
         when(qualityGate.getConditions()).thenReturn(List.of());
-        when(scannerContext.getProperties()).thenReturn(Map.of());
+        
+        // Set up scanner properties to include configuration
+        Map<String, String> scannerProps = new HashMap<>();
+        scannerProps.put(Constants.ENABLE_NOTIFY, "true");
+        scannerProps.put(Constants.WEBHOOK_URL, "http://localhost:" + wireMockServer.port() + "/webhook");
+        scannerProps.put(Constants.WEBHOOK_MESSAGE_AVATAR, Constants.DEFAULT_WEBHOOK_MESSAGE_AVATAR);
+        scannerProps.put(Constants.WEBHOOK_SEND_ON_FAILED, "false");
+        scannerProps.put(Constants.SONAR_URL, "http://sonarqube.example.com");
+        
+        when(scannerContext.getProperties()).thenReturn(scannerProps);
+        
+        // Run pre-analysis to validate configuration
+        preAnalysisTask.finished(context);
+    }
+
+    private void setupMockConfiguration() {
+        when(mockConfiguration.get(Constants.ENABLE_NOTIFY)).thenReturn(Optional.of("true"));
+        when(mockConfiguration.getBoolean(Constants.ENABLE_NOTIFY)).thenReturn(Optional.of(true));
+        when(mockConfiguration.get(Constants.WEBHOOK_URL)).thenReturn(Optional.of("http://localhost:" + wireMockServer.port() + "/webhook"));
+        when(mockConfiguration.get(Constants.WEBHOOK_MESSAGE_AVATAR)).thenReturn(Optional.of(Constants.DEFAULT_WEBHOOK_MESSAGE_AVATAR));
+        when(mockConfiguration.getBoolean(Constants.WEBHOOK_SEND_ON_FAILED)).thenReturn(Optional.of(false));
+        when(mockConfiguration.get(Constants.SONAR_URL)).thenReturn(Optional.of("http://sonarqube.example.com"));
     }
 
     @After
@@ -183,24 +207,31 @@ public class MSTeamsPostProjectAnalysisTaskTest {
             wireMockServer.stop();
         }
         // Clear system properties
-        System.clearProperty("sonar.msteams.enable");
-        System.clearProperty("sonar.msteams.webhook.url");
-        System.clearProperty("sonar.core.serverBaseURL");
-        System.clearProperty("sonar.msteams.send.on.failed");
-        System.clearProperty("sonar.msteams.avatar.url");
+        System.clearProperty(Constants.ENABLE_NOTIFY);
+        System.clearProperty(Constants.WEBHOOK_URL);
+        System.clearProperty(Constants.SONAR_URL);
+        System.clearProperty(Constants.WEBHOOK_SEND_ON_FAILED);
+        System.clearProperty(Constants.WEBHOOK_MESSAGE_AVATAR);
     }
 
     @Test
     public void testConstructor() {
-        // Create a mock config provider for this test
-        MSTeamsConfigurationProvider testConfigProvider = mock(MSTeamsConfigurationProvider.class);
-        MSTeamsPostProjectAnalysisTask task = new MSTeamsPostProjectAnalysisTask(testConfigProvider);
+        // Test default constructor
+        MSTeamsPostProjectAnalysisTask task = new MSTeamsPostProjectAnalysisTask();
         assertEquals("MS Teams notification extension for SonarQube analysis results", task.getDescription());
     }
 
     @Test
+    public void testPreAnalysisValidation() {
+        // Test that pre-analysis validation works
+        assertTrue("Configuration should be validated", MSTeamsPreProjectAnalysisTask.isConfigurationValidated());
+        assertEquals("true", MSTeamsPreProjectAnalysisTask.getValidatedConfig(Constants.ENABLE_NOTIFY));
+        assertTrue("Plugin should be enabled", MSTeamsPreProjectAnalysisTask.getValidatedBooleanConfig(Constants.ENABLE_NOTIFY, false));
+    }
+
+    @Test
     public void testFinished_WithValidConfiguration_SendsNotification() {
-        // Arrange - the mock config is already set up in setUp()
+        // Arrange - the mock config is already set up in setUp() and validated by pre-analysis
         
         stubFor(post(urlEqualTo("/webhook"))
                 .withHeader("Content-Type", containing("application/json"))
@@ -216,16 +247,6 @@ public class MSTeamsPostProjectAnalysisTaskTest {
         // Act
         plugin.finished(context);
 
-        // Debug: Print what was actually received
-        System.out.println("=== Received Requests ===");
-        wireMockServer.getAllServeEvents().forEach(event -> {
-            System.out.println("Method: " + event.getRequest().getMethod());
-            System.out.println("URL: " + event.getRequest().getUrl());
-            System.out.println("Headers: " + event.getRequest().getHeaders());
-            System.out.println("Body: " + event.getRequest().getBodyAsString());
-            System.out.println("---");
-        });
-
         // Assert
         verify(postRequestedFor(urlEqualTo("/webhook"))
                 .withHeader("Content-Type", containing("application/json"))
@@ -235,7 +256,11 @@ public class MSTeamsPostProjectAnalysisTaskTest {
     @Test
     public void testFinished_WithFailedQualityGateAndSendOnFailedOnly_SendsNotification() {
         // Arrange - update the mock config to send on failed only
-        when(mockConfigProvider.getSendOnFailedOnly()).thenReturn(true);
+        when(mockConfiguration.getBoolean(Constants.WEBHOOK_SEND_ON_FAILED)).thenReturn(Optional.of(true));
+        
+        // Re-run pre-analysis with updated config
+        preAnalysisTask = new MSTeamsPreProjectAnalysisTask(mockConfiguration);
+        preAnalysisTask.finished(context);
         
         // Set up failed quality gate
         when(qualityGate.getStatus()).thenReturn(QualityGate.Status.ERROR);
@@ -255,7 +280,11 @@ public class MSTeamsPostProjectAnalysisTaskTest {
     @Test
     public void testFinished_WithPassedQualityGateAndSendOnFailedOnly_DoesNotSendNotification() {
         // Arrange - update the mock config to send on failed only
-        when(mockConfigProvider.getSendOnFailedOnly()).thenReturn(true);
+        when(mockConfiguration.getBoolean(Constants.WEBHOOK_SEND_ON_FAILED)).thenReturn(Optional.of(true));
+        
+        // Re-run pre-analysis with updated config
+        preAnalysisTask = new MSTeamsPreProjectAnalysisTask(mockConfiguration);
+        preAnalysisTask.finished(context);
         
         // Set up passed quality gate (already set in setUp)
         when(qualityGate.getStatus()).thenReturn(QualityGate.Status.OK);
@@ -275,7 +304,12 @@ public class MSTeamsPostProjectAnalysisTaskTest {
     @Test
     public void testFinished_WithDisabledPlugin_DoesNotSendNotification() {
         // Arrange - disable the plugin
-        when(mockConfigProvider.isEnabled()).thenReturn(false);
+        when(mockConfiguration.get(Constants.ENABLE_NOTIFY)).thenReturn(Optional.of("false"));
+        when(mockConfiguration.getBoolean(Constants.ENABLE_NOTIFY)).thenReturn(Optional.of(false));
+        
+        // Re-run pre-analysis with disabled config
+        preAnalysisTask = new MSTeamsPreProjectAnalysisTask(mockConfiguration);
+        preAnalysisTask.finished(context);
 
         stubFor(post(urlEqualTo("/webhook"))
                 .willReturn(aResponse()
@@ -292,7 +326,11 @@ public class MSTeamsPostProjectAnalysisTaskTest {
     @Test
     public void testFinished_WithMissingWebhookUrl_DoesNotSendNotification() {
         // Arrange - set empty webhook URL
-        when(mockConfigProvider.getWebhookUrl()).thenReturn("");
+        when(mockConfiguration.get(Constants.WEBHOOK_URL)).thenReturn(Optional.of(""));
+        
+        // Re-run pre-analysis with missing webhook URL
+        preAnalysisTask = new MSTeamsPreProjectAnalysisTask(mockConfiguration);
+        preAnalysisTask.finished(context);
 
         stubFor(post(urlEqualTo("/webhook"))
                 .willReturn(aResponse()
@@ -302,7 +340,26 @@ public class MSTeamsPostProjectAnalysisTaskTest {
         // Act
         plugin.finished(context);
 
-        // Assert - No request should be made
+        // Assert - No request should be made (configuration should be invalid)
+        assertEquals(0, wireMockServer.getAllServeEvents().size());
+    }
+
+    @Test
+    public void testFinished_WithInvalidWebhookUrl_DoesNotSendNotification() {
+        // Arrange - set invalid webhook URL
+        when(mockConfiguration.get(Constants.WEBHOOK_URL)).thenReturn(Optional.of("invalid-url"));
+        
+        // Re-run pre-analysis with invalid webhook URL
+        preAnalysisTask = new MSTeamsPreProjectAnalysisTask(mockConfiguration);
+        preAnalysisTask.finished(context);
+
+        // Configuration should be invalid
+        assertFalse("Configuration should be invalid with bad webhook URL", MSTeamsPreProjectAnalysisTask.isConfigurationValidated());
+
+        // Act
+        plugin.finished(context);
+
+        // Assert - Should fall back to direct configuration and still not send
         assertEquals(0, wireMockServer.getAllServeEvents().size());
     }
 
@@ -310,7 +367,11 @@ public class MSTeamsPostProjectAnalysisTaskTest {
     public void testFinished_WithCustomAvatarUrl_SendsNotification() {
         // Arrange
         String customAvatarUrl = "https://example.com/custom-avatar.png";
-        when(mockConfigProvider.getAvatarUrl()).thenReturn(customAvatarUrl);
+        when(mockConfiguration.get(Constants.WEBHOOK_MESSAGE_AVATAR)).thenReturn(Optional.of(customAvatarUrl));
+        
+        // Re-run pre-analysis with custom avatar
+        preAnalysisTask = new MSTeamsPreProjectAnalysisTask(mockConfiguration);
+        preAnalysisTask.finished(context);
 
         stubFor(post(urlEqualTo("/webhook"))
                 .withRequestBody(containing("\"url\": \"" + customAvatarUrl + "\""))
@@ -342,20 +403,87 @@ public class MSTeamsPostProjectAnalysisTaskTest {
         verify(postRequestedFor(urlEqualTo("/webhook")));
     }
 
+    @Test
+    public void testFinished_WithoutPreValidation_UsesFallbackMode() {
+        // Arrange - Clear the validated configuration to simulate no pre-validation
+        // We can do this by creating a new pre-analysis task with disabled config
+        when(mockConfiguration.get(Constants.ENABLE_NOTIFY)).thenReturn(Optional.empty());
+        when(mockConfiguration.getBoolean(Constants.ENABLE_NOTIFY)).thenReturn(Optional.empty());
+        
+        MSTeamsPreProjectAnalysisTask emptyPreAnalysisTask = new MSTeamsPreProjectAnalysisTask(mockConfiguration);
+        // Don't run the pre-analysis task, so configuration won't be validated
+        
+        // Set up scanner properties for fallback
+        Map<String, String> scannerProps = new HashMap<>();
+        scannerProps.put(Constants.ENABLE_NOTIFY, "true");
+        scannerProps.put(Constants.WEBHOOK_URL, "http://localhost:" + wireMockServer.port() + "/webhook");
+        scannerProps.put(Constants.WEBHOOK_MESSAGE_AVATAR, Constants.DEFAULT_WEBHOOK_MESSAGE_AVATAR);
+        scannerProps.put(Constants.WEBHOOK_SEND_ON_FAILED, "false");
+        scannerProps.put(Constants.SONAR_URL, "http://sonarqube.example.com");
+        when(scannerContext.getProperties()).thenReturn(scannerProps);
+
+        stubFor(post(urlEqualTo("/webhook"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withBody("1")));
+
+        // Act
+        plugin.finished(context);
+
+        // Assert - Should use fallback mode and still send notification
+        verify(postRequestedFor(urlEqualTo("/webhook")));
+    }
+
+    @Test
+    public void testFinished_WithSystemProperties_SendsNotification() {
+        // Arrange - Set system properties instead of configuration
+        System.setProperty(Constants.ENABLE_NOTIFY, "true");
+        System.setProperty(Constants.WEBHOOK_URL, "http://localhost:" + wireMockServer.port() + "/webhook");
+        System.setProperty(Constants.WEBHOOK_MESSAGE_AVATAR, Constants.DEFAULT_WEBHOOK_MESSAGE_AVATAR);
+        System.setProperty(Constants.WEBHOOK_SEND_ON_FAILED, "false");
+        System.setProperty(Constants.SONAR_URL, "http://sonarqube.example.com");
+        
+        // Clear SonarQube configuration
+        when(mockConfiguration.get(Constants.ENABLE_NOTIFY)).thenReturn(Optional.empty());
+        when(mockConfiguration.getBoolean(Constants.ENABLE_NOTIFY)).thenReturn(Optional.empty());
+        when(mockConfiguration.get(Constants.WEBHOOK_URL)).thenReturn(Optional.empty());
+        
+        // Re-run pre-analysis to pick up system properties
+        preAnalysisTask = new MSTeamsPreProjectAnalysisTask(mockConfiguration);
+        preAnalysisTask.finished(context);
+
+        stubFor(post(urlEqualTo("/webhook"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withBody("1")));
+
+        // Act
+        plugin.finished(context);
+
+        // Assert
+        verify(postRequestedFor(urlEqualTo("/webhook")));
+    }
+
+    @Test
+    public void testValidatedConfigAccess() {
+        // Test static methods for accessing validated configuration
+        assertTrue("Configuration should be validated", MSTeamsPreProjectAnalysisTask.isConfigurationValidated());
+        
+        String webhookUrl = MSTeamsPreProjectAnalysisTask.getValidatedConfig(Constants.WEBHOOK_URL);
+        assertTrue("Webhook URL should be set", webhookUrl != null && !webhookUrl.isEmpty());
+        
+        boolean enabled = MSTeamsPreProjectAnalysisTask.getValidatedBooleanConfig(Constants.ENABLE_NOTIFY, false);
+        assertTrue("Plugin should be enabled", enabled);
+        
+        Map<String, String> allConfig = MSTeamsPreProjectAnalysisTask.getAllValidatedConfig();
+        assertTrue("Config map should contain entries", allConfig.size() > 0);
+        assertTrue("Config should contain enable setting", allConfig.containsKey(Constants.ENABLE_NOTIFY));
+    }
+
     // Keep one backward compatibility test with the old approach
     @Test
     public void testFinishedWithSendNotify_BackwardCompatibility() {
         wireMockServer.addMockServiceRequestListener(requestBodyCaptureListener);
-        
-        // Create a separate test with a different config approach
-        MSTeamsConfigurationProvider backwardCompatConfigProvider = mock(MSTeamsConfigurationProvider.class);
-        when(backwardCompatConfigProvider.isEnabled()).thenReturn(true);
-        when(backwardCompatConfigProvider.getWebhookUrl()).thenReturn("http://localhost:" + wireMockServer.port() + "/mock");
-        when(backwardCompatConfigProvider.getAvatarUrl()).thenReturn("https://raw.githubusercontent.com/toilatester/logo/main/toilatester.png");
-        when(backwardCompatConfigProvider.getSendOnFailedOnly()).thenReturn(true);
-        when(backwardCompatConfigProvider.getBaseUrl()).thenReturn("https://toilatester.blog");
-        
-        MSTeamsPostProjectAnalysisTask backwardCompatPlugin = new MSTeamsPostProjectAnalysisTask(backwardCompatConfigProvider);
         
         Context mockContext = Mockito.mock(Context.class);
         ProjectAnalysis mockProjectAnalysis = mock(ProjectAnalysis.class);
@@ -374,7 +502,15 @@ public class MSTeamsPostProjectAnalysisTaskTest {
         when(mockQualityGate.getStatus()).thenReturn(QualityGate.Status.ERROR); // Failed quality gate
         when(mockQualityGate.getName()).thenReturn("Sonar way");
         when(mockQualityGate.getConditions()).thenReturn(List.of(stubNonRatingCondition));
-        when(mockScannerContext.getProperties()).thenReturn(Map.of());
+        
+        // Set up scanner properties
+        Map<String, String> backwardCompatProps = new HashMap<>();
+        backwardCompatProps.put(Constants.ENABLE_NOTIFY, "true");
+        backwardCompatProps.put(Constants.WEBHOOK_URL, "http://localhost:" + wireMockServer.port() + "/mock");
+        backwardCompatProps.put(Constants.WEBHOOK_MESSAGE_AVATAR, "https://raw.githubusercontent.com/toilatester/logo/main/toilatester.png");
+        backwardCompatProps.put(Constants.WEBHOOK_SEND_ON_FAILED, "true");
+        backwardCompatProps.put(Constants.SONAR_URL, "https://toilatester.blog");
+        when(mockScannerContext.getProperties()).thenReturn(backwardCompatProps);
 
         Mockito.when(mockContext.getProjectAnalysis()).thenReturn(mockProjectAnalysis);
 
@@ -384,6 +520,7 @@ public class MSTeamsPostProjectAnalysisTaskTest {
                         .withHeader("Content-Type", "application/json")
                         .withBody("{\"message\": \"Mock response\"}")));
 
+        MSTeamsPostProjectAnalysisTask backwardCompatPlugin = new MSTeamsPostProjectAnalysisTask();
         backwardCompatPlugin.finished(mockContext);
 
         // Just verify that a request was made

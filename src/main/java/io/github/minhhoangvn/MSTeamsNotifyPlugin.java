@@ -1,6 +1,6 @@
 package io.github.minhhoangvn;
 
-import io.github.minhhoangvn.config.MSTeamsConfigurationProvider;
+import io.github.minhhoangvn.extension.MSTeamsPreProjectAnalysisTask;
 import io.github.minhhoangvn.extension.MSTeamsPostProjectAnalysisTask;
 import io.github.minhhoangvn.settings.MSTeamsNotifyProperties;
 import org.sonar.api.Plugin;
@@ -15,11 +15,11 @@ public class MSTeamsNotifyPlugin implements Plugin {
     public void define(Context context) {
         LOGGER.info("MS Teams Plugin: Registering extensions...");
         
-        // Register the configuration provider
-        context.addExtension(MSTeamsConfigurationProvider.class);
-        LOGGER.info("MS Teams Plugin: Registered MSTeamsConfigurationProvider");
+        // Register the pre-analysis configuration validator first
+        context.addExtension(MSTeamsPreProjectAnalysisTask.class);
+        LOGGER.info("MS Teams Plugin: Registered MSTeamsPreProjectAnalysisTask");
         
-        // Register the post-analysis task
+        // Register the post-analysis notification task
         context.addExtension(MSTeamsPostProjectAnalysisTask.class);
         LOGGER.info("MS Teams Plugin: Registered MSTeamsPostProjectAnalysisTask");
         

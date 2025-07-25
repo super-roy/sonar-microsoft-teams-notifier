@@ -28,7 +28,7 @@ public class MSTeamsNotifyProperties {
                 .description("Enable push SonarQube result to Microsoft Teams")
                 .category(Constants.CATEGORY)
                 .type(PropertyType.BOOLEAN)
-                .defaultValue(Constants.DEFAULT_ENABLE_NOTIFY)
+                .defaultValue(String.valueOf(Constants.DEFAULT_ENABLE_NOTIFY))
                 .index(0)
                 .build();
     }
@@ -61,7 +61,7 @@ public class MSTeamsNotifyProperties {
                 .description("Only send notify to webhook when analysis failed")
                 .category(Constants.CATEGORY)
                 .type(PropertyType.BOOLEAN)
-                .defaultValue(Constants.DEFAULT_WEBHOOK_SEND_ON_FAILED)
+                .defaultValue(String.valueOf(Constants.DEFAULT_WEBHOOK_SEND_ON_FAILED))
                 .index(3)
                 .build();
     }

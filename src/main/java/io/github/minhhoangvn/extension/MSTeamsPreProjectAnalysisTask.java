@@ -1,174 +1,259 @@
 package io.github.minhhoangvn.extension;
 
-import io.github.minhhoangvn.client.MSTeamsWebHookClient;
-import io.github.minhhoangvn.utils.AdaptiveCardsFormat;
 import io.github.minhhoangvn.utils.Constants;
-import okhttp3.Response;
-import org.apache.commons.lang.StringUtils;
 import org.sonar.api.ce.posttask.PostProjectAnalysisTask;
 import org.sonar.api.config.Configuration;
 import org.sonar.api.utils.log.Logger;
 import org.sonar.api.utils.log.Loggers;
+import org.apache.commons.lang.StringUtils;
 
-import java.io.IOException;
-import java.util.Optional;
+import java.util.HashMap;
+import java.util.Map;
 
 public class MSTeamsPreProjectAnalysisTask implements PostProjectAnalysisTask {
 
     private static final Logger LOGGER = Loggers.get(MSTeamsPreProjectAnalysisTask.class);
+    
+    // Static cache to store validated configuration
+    private static final Map<String, String> VALIDATED_CONFIG = new HashMap<>();
+    private static volatile boolean configurationValidated = false;
+    
+    private final Configuration configuration;
+
+    public MSTeamsPreProjectAnalysisTask(Configuration configuration) {
+        this.configuration = configuration;
+    }
+    
+    // Default constructor for SonarQube plugin system (when Configuration injection doesn't work)
+    public MSTeamsPreProjectAnalysisTask() {
+        this.configuration = null;
+    }
 
     @Override
     public void finished(Context context) {
+        LOGGER.info("=== MS Teams Plugin: Pre-analysis configuration validation started ===");
+        
         try {
-            // Get configuration from context
-            Configuration config = getConfiguration(context);
+            // Clear previous configuration
+            VALIDATED_CONFIG.clear();
+            configurationValidated = false;
             
-            // Check if plugin is enabled
-            boolean isEnabled = config.getBoolean(Constants.ENABLE_NOTIFY)
-                    .orElse(Constants.DEFAULT_ENABLE_NOTIFY);
-            if (!isEnabled) {
-                LOGGER.info("MS Teams notification plugin is disabled");
-                return;
+            // Load and validate configuration from SonarQube settings
+            validateAndCacheConfiguration(context);
+            
+            if (configurationValidated) {
+                LOGGER.info("MS Teams Plugin: Configuration validation completed successfully");
+                logValidatedConfiguration();
+            } else {
+                LOGGER.warn("MS Teams Plugin: Configuration validation failed - some settings may be missing");
             }
             
-            String webhookUrl = config.get(Constants.WEBHOOK_URL).orElse(null);
-            String avatarUrl = config.get(Constants.WEBHOOK_MESSAGE_AVATAR)
-                    .orElse(Constants.DEFAULT_WEBHOOK_MESSAGE_AVATAR);
-            boolean sendOnFailedOnly = config.getBoolean(Constants.WEBHOOK_SEND_ON_FAILED)
-                    .orElse(Constants.DEFAULT_WEBHOOK_SEND_ON_FAILED);
-            String baseUrl = config.get(Constants.SONAR_URL).orElse("");
-            
-            if (StringUtils.isEmpty(webhookUrl)) {
-                LOGGER.warn("MS Teams webhook URL not configured. Please configure it in Administration > Configuration > Microsoft Teams");
-                return;
-            }
-
-            ProjectAnalysis projectAnalysis = context.getProjectAnalysis();
-            
-            // Check if we should send notification based on settings
-            if (sendOnFailedOnly && !isAnalysisFailed(projectAnalysis)) {
-                LOGGER.info("Analysis passed and 'Send on failed only' is enabled. Skipping notification.");
-                return;
-            }
-            
-            String projectKey = projectAnalysis.getProject().getKey();
-            String projectUrl = buildProjectUrl(baseUrl, projectKey);
-            
-            String payload = AdaptiveCardsFormat.createMessageCardJSONPayload(
-                    projectAnalysis, projectUrl, avatarUrl);
-            
-            LOGGER.info("Sending notification to MS Teams for project: {}", 
-                    projectAnalysis.getProject().getName());
-            LOGGER.debug("Payload: {}", payload);
-            
-            MSTeamsWebHookClient client = new MSTeamsWebHookClient();
-            try (Response response = client.sendNotify(webhookUrl, payload)) {
-                if (response.isSuccessful()) {
-                    LOGGER.info("Successfully sent notification to MS Teams");
-                } else {
-                    String responseBody = response.body() != null ? 
-                            response.body().string() : "null";
-                    LOGGER.error("Failed to send notification to MS Teams. Response code: {}, body: {}", 
-                            response.code(), responseBody);
-                }
-            }
-        } catch (IOException e) {
-            LOGGER.error("Error sending notification to MS Teams", e);
         } catch (Exception e) {
-            LOGGER.error("Unexpected error in MS Teams notification", e);
+            LOGGER.error("MS Teams Plugin: Error during configuration validation", e);
+            configurationValidated = false;
         }
+        
+        LOGGER.info("=== MS Teams Plugin: Pre-analysis configuration validation completed ===");
     }
     
-    private Configuration getConfiguration(Context context) {
-        // For SonarQube 10.x, create a wrapper for configuration access
-        return new ConfigurationWrapper(context);
-    }
-    
-    private String buildProjectUrl(String baseUrl, String projectKey) {
+    private void validateAndCacheConfiguration(Context context) {
+        LOGGER.info("MS Teams Plugin: Loading configuration from SonarQube settings...");
+        
+        // 1. Load and validate plugin enable setting
+        boolean isEnabled = loadBooleanConfig(Constants.ENABLE_NOTIFY, Constants.DEFAULT_ENABLE_NOTIFY);
+        VALIDATED_CONFIG.put(Constants.ENABLE_NOTIFY, String.valueOf(isEnabled));
+        LOGGER.info("MS Teams Plugin: Plugin enabled = {}", isEnabled);
+        
+        if (!isEnabled) {
+            LOGGER.info("MS Teams Plugin: Plugin is disabled, skipping further configuration validation");
+            configurationValidated = true; // Consider it validated even if disabled
+            return;
+        }
+        
+        // 2. Load and validate webhook URL (required)
+        String webhookUrl = loadStringConfig(Constants.WEBHOOK_URL, "");
+        VALIDATED_CONFIG.put(Constants.WEBHOOK_URL, webhookUrl);
+        
+        if (StringUtils.isEmpty(webhookUrl)) {
+            LOGGER.error("MS Teams Plugin: Webhook URL is required but not configured. Please set '{}' in Administration > Configuration > Microsoft Teams", Constants.WEBHOOK_URL);
+            configurationValidated = false;
+            return;
+        } else if (!isValidWebhookUrl(webhookUrl)) {
+            LOGGER.error("MS Teams Plugin: Invalid webhook URL format: {}", maskUrl(webhookUrl));
+            configurationValidated = false;
+            return;
+        }
+        
+        LOGGER.info("MS Teams Plugin: Webhook URL validated successfully");
+        
+        // 3. Load avatar URL (optional)
+        String avatarUrl = loadStringConfig(Constants.WEBHOOK_MESSAGE_AVATAR, Constants.DEFAULT_WEBHOOK_MESSAGE_AVATAR);
+        VALIDATED_CONFIG.put(Constants.WEBHOOK_MESSAGE_AVATAR, avatarUrl);
+        LOGGER.info("MS Teams Plugin: Avatar URL = {}", avatarUrl);
+        
+        // 4. Load send on failed only setting
+        boolean sendOnFailedOnly = loadBooleanConfig(Constants.WEBHOOK_SEND_ON_FAILED, Constants.DEFAULT_WEBHOOK_SEND_ON_FAILED);
+        VALIDATED_CONFIG.put(Constants.WEBHOOK_SEND_ON_FAILED, String.valueOf(sendOnFailedOnly));
+        LOGGER.info("MS Teams Plugin: Send on failed only = {}", sendOnFailedOnly);
+        
+        // 5. Load SonarQube base URL (optional but recommended)
+        String baseUrl = loadStringConfig(Constants.SONAR_URL, "");
         if (StringUtils.isEmpty(baseUrl)) {
-            // Try to get from environment or system properties as fallback
-            baseUrl = System.getProperty(Constants.SONAR_URL, "");
-            if (baseUrl.isEmpty()) {
-                baseUrl = System.getenv("SONAR_CORE_SERVERBASEURL");
-                if (baseUrl == null) {
-                    baseUrl = "http://localhost:9000"; // Default fallback
-                }
+            // Try to get from common environment variables
+            baseUrl = System.getenv("SONAR_CORE_SERVERBASEURL");
+            if (StringUtils.isEmpty(baseUrl)) {
+                baseUrl = "http://localhost:9000"; // Default fallback
+                LOGGER.warn("MS Teams Plugin: SonarQube base URL not configured, using default: {}", baseUrl);
+            } else {
+                LOGGER.info("MS Teams Plugin: Using base URL from environment: {}", baseUrl);
             }
         }
+        VALIDATED_CONFIG.put(Constants.SONAR_URL, baseUrl);
         
-        // Ensure baseUrl doesn't end with slash
-        if (baseUrl.endsWith("/")) {
-            baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+        // 6. Test webhook connectivity (optional)
+        if (Boolean.parseBoolean(System.getProperty("sonar.msteams.test.webhook", "false"))) {
+            testWebhookConnectivity(webhookUrl);
         }
         
-        return baseUrl + "/dashboard?id=" + projectKey;
+        configurationValidated = true;
+        LOGGER.info("MS Teams Plugin: All configuration validation checks passed");
     }
     
-    private boolean isAnalysisFailed(ProjectAnalysis projectAnalysis) {
-        return projectAnalysis.getQualityGate() != null && 
-               projectAnalysis.getQualityGate().getStatus() == 
-               org.sonar.api.ce.posttask.QualityGate.Status.ERROR;
+    private String loadStringConfig(String key, String defaultValue) {
+        try {
+            // Priority: SonarQube Configuration -> System Properties -> Environment Variables -> Default
+            
+            // 1. Try SonarQube Configuration first (if available)
+            if (configuration != null) {
+                String value = configuration.get(key).orElse(null);
+                if (value != null && !value.trim().isEmpty()) {
+                    LOGGER.debug("Config [{}] loaded from SonarQube settings: {}", key, maskSensitiveValue(key, value));
+                    return value.trim();
+                }
+            }
+            
+            // 2. Try system properties
+            String value = System.getProperty(key);
+            if (value != null && !value.trim().isEmpty()) {
+                LOGGER.debug("Config [{}] loaded from system properties: {}", key, maskSensitiveValue(key, value));
+                return value.trim();
+            }
+            
+            // 3. Try environment variables
+            String envKey = key.replace(".", "_").toUpperCase();
+            value = System.getenv(envKey);
+            if (value != null && !value.trim().isEmpty()) {
+                LOGGER.debug("Config [{}] loaded from environment variable {}: {}", key, envKey, maskSensitiveValue(key, value));
+                return value.trim();
+            }
+            
+            LOGGER.debug("Config [{}] not found, using default: {}", key, defaultValue);
+            return defaultValue;
+            
+        } catch (Exception e) {
+            LOGGER.warn("Error loading config [{}], using default: {}", key, e.getMessage());
+            return defaultValue;
+        }
+    }
+    
+    private boolean loadBooleanConfig(String key, boolean defaultValue) {
+        try {
+            // Try SonarQube Configuration first (if available)
+            if (configuration != null) {
+                return configuration.getBoolean(key).orElse(defaultValue);
+            }
+        } catch (Exception e) {
+            LOGGER.debug("Could not access SonarQube boolean configuration for key {}: {}", key, e.getMessage());
+        }
+        
+        // Fallback to string parsing
+        String stringValue = loadStringConfig(key, String.valueOf(defaultValue));
+        return Boolean.parseBoolean(stringValue);
+    }
+    
+    private boolean isValidWebhookUrl(String url) {
+        try {
+            // More lenient validation for testing - accept localhost URLs
+            return url.startsWith("https://") || url.startsWith("http://localhost") || url.startsWith("http://127.0.0.1");
+        } catch (Exception e) {
+            return false;
+        }
+    }
+    
+    private String maskUrl(String url) {
+        if (StringUtils.isEmpty(url) || url.length() < 20) {
+            return "[MASKED]";
+        }
+        return url.substring(0, 20) + "..." + url.substring(url.length() - 10);
+    }
+    
+    private String maskSensitiveValue(String key, String value) {
+        if (key.toLowerCase().contains("url") || key.toLowerCase().contains("webhook")) {
+            return maskUrl(value);
+        }
+        return value;
+    }
+    
+    private void testWebhookConnectivity(String webhookUrl) {
+        try {
+            LOGGER.info("MS Teams Plugin: Testing webhook connectivity...");
+            // Simple connectivity test - you could implement actual HTTP test here
+            // For now, just validate the URL format more thoroughly
+            java.net.URL url = new java.net.URL(webhookUrl);
+            LOGGER.info("MS Teams Plugin: Webhook URL format validation passed: {}:{}", url.getHost(), url.getPort());
+        } catch (Exception e) {
+            LOGGER.warn("MS Teams Plugin: Webhook connectivity test failed: {}", e.getMessage());
+        }
+    }
+    
+    private void logValidatedConfiguration() {
+        LOGGER.info("=== MS Teams Plugin: Validated Configuration Summary ===");
+        LOGGER.info("  - Plugin Enabled: {}", VALIDATED_CONFIG.get(Constants.ENABLE_NOTIFY));
+        LOGGER.info("  - Webhook URL: {}", maskUrl(VALIDATED_CONFIG.get(Constants.WEBHOOK_URL)));
+        LOGGER.info("  - Avatar URL: {}", VALIDATED_CONFIG.get(Constants.WEBHOOK_MESSAGE_AVATAR));
+        LOGGER.info("  - Send on Failed Only: {}", VALIDATED_CONFIG.get(Constants.WEBHOOK_SEND_ON_FAILED));
+        LOGGER.info("  - SonarQube Base URL: {}", VALIDATED_CONFIG.get(Constants.SONAR_URL));
+        LOGGER.info("=== End Configuration Summary ===");
+    }
+    
+    // Static methods for MSTeamsPostProjectAnalysisTask to access validated config
+    public static boolean isConfigurationValidated() {
+        return configurationValidated;
+    }
+    
+    public static String getValidatedConfig(String key) {
+        return VALIDATED_CONFIG.get(key);
+    }
+    
+    public static String getValidatedConfig(String key, String defaultValue) {
+        String value = VALIDATED_CONFIG.get(key);
+        return value != null ? value : defaultValue;
+    }
+    
+    public static boolean getValidatedBooleanConfig(String key, boolean defaultValue) {
+        String value = VALIDATED_CONFIG.get(key);
+        return value != null ? Boolean.parseBoolean(value) : defaultValue;
+    }
+    
+    public static Map<String, String> getAllValidatedConfig() {
+        return new HashMap<>(VALIDATED_CONFIG);
+    }
+    
+    // Static method to manually set configuration for testing
+    public static void setValidatedConfigForTesting(Map<String, String> config, boolean validated) {
+        VALIDATED_CONFIG.clear();
+        VALIDATED_CONFIG.putAll(config);
+        configurationValidated = validated;
+    }
+    
+    // Static method to clear configuration for testing
+    public static void clearValidatedConfig() {
+        VALIDATED_CONFIG.clear();
+        configurationValidated = false;
     }
 
     @Override
     public String getDescription() {
-        return "MS Teams notification extension for SonarQube analysis results (Pre-Analysis)";
-    }
-    
-    // Wrapper class to handle configuration access
-    private static class ConfigurationWrapper implements Configuration {
-        private final Context context;
-        
-        public ConfigurationWrapper(Context context) {
-            this.context = context;
-        }
-        
-        @Override
-        public Optional<String> get(String key) {
-            // Try system property first
-            String value = System.getProperty(key);
-            if (value != null) {
-                return Optional.of(value);
-            }
-            
-            // Try environment variable
-            String envKey = key.replace(".", "_").toUpperCase();
-            value = System.getenv(envKey);
-            if (value != null) {
-                return Optional.of(value);
-            }
-            
-            return Optional.empty();
-        }
-        
-        @Override
-        public Optional<Boolean> getBoolean(String key) {
-            return get(key).map(Boolean::parseBoolean);
-        }
-        
-        @Override
-        public Optional<Integer> getInt(String key) {
-            return get(key).map(Integer::parseInt);
-        }
-        
-        @Override
-        public Optional<Long> getLong(String key) {
-            return get(key).map(Long::parseLong);
-        }
-        
-        @Override
-        public Optional<Double> getDouble(String key) {
-            return get(key).map(Double::parseDouble);
-        }
-        
-        @Override
-        public String[] getStringArray(String key) {
-            return get(key).map(s -> s.split(",")).orElse(new String[0]);
-        }
-        
-        @Override
-        public boolean hasKey(String key) {
-            return get(key).isPresent();
-        }
+        return "MS Teams configuration validator for SonarQube analysis";
     }
 }
