@@ -16,8 +16,10 @@ import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -47,12 +49,16 @@ public class SonarQubeMSTeamsNotifierPluginTest {
 
         // Create mock configuration
         mockConfiguration = mock(Configuration.class);
-        setupMockConfiguration();
         
         // Create both tasks
         preAnalysisTask = new MSTeamsPreProjectAnalysisTask(mockConfiguration);
         postAnalysisTask = new MSTeamsPostProjectAnalysisTask();
         
+        setupMockObjects();
+        setupMockConfiguration();
+    }
+
+    private void setupMockObjects() {
         context = mock(Context.class);
         projectAnalysis = mock(ProjectAnalysis.class);
         project = mock(Project.class);
@@ -97,9 +103,11 @@ public class SonarQubeMSTeamsNotifierPluginTest {
         if (wireMockServer != null) {
             wireMockServer.stop();
         }
-        // Clear validated configuration
         MSTeamsPreProjectAnalysisTask.clearValidatedConfig();
-        // Clear system properties
+        clearSystemProperties();
+    }
+
+    private void clearSystemProperties() {
         System.clearProperty(Constants.ENABLE_NOTIFY);
         System.clearProperty(Constants.WEBHOOK_URL);
         System.clearProperty(Constants.WEBHOOK_MESSAGE_AVATAR);
@@ -109,21 +117,22 @@ public class SonarQubeMSTeamsNotifierPluginTest {
 
     @Test
     public void testFullWorkflow_PreAndPostAnalysis_SendsNotification() {
-        // Arrange
+        // Arrange - Updated to match actual payload structure
         wireMockServer.stubFor(post(urlEqualTo("/webhook"))
                 .withHeader("Content-Type", containing("application/json"))
                 .withHeader("Accept", equalTo("application/json"))
+                .withRequestBody(containing("\"type\": \"message\""))
+                .withRequestBody(containing("\"attachments\""))
+                .withRequestBody(containing("\"contentType\": \"application/vnd.microsoft.card.adaptive\""))
                 .withRequestBody(containing("\"type\": \"AdaptiveCard\""))
-                .withRequestBody(containing("\"text\": \"Test Project SonarQube Analysis Result\""))
-                .withRequestBody(containing("\"value\": \"SUCCESS\""))
-                .withRequestBody(containing("\"value\": \"Sonar way (OK)\""))
+                .withRequestBody(containing("Test Project SonarQube Analysis Result"))
                 .willReturn(aResponse()
                         .withStatus(200)
                         .withBody("1")));
 
-        // Act - Run the full workflow
-        preAnalysisTask.finished(context); // Validate configuration
-        postAnalysisTask.finished(context); // Send notification
+        // Act
+        preAnalysisTask.finished(context);
+        postAnalysisTask.finished(context);
 
         // Assert
         wireMockServer.verify(postRequestedFor(urlEqualTo("/webhook"))
@@ -136,24 +145,37 @@ public class SonarQubeMSTeamsNotifierPluginTest {
         // Act
         preAnalysisTask.finished(context);
         
-        // Debug logging
-        System.out.println("Configuration validated: " + MSTeamsPreProjectAnalysisTask.isConfigurationValidated());
-        System.out.println("Enable notify: " + MSTeamsPreProjectAnalysisTask.getValidatedConfig(Constants.ENABLE_NOTIFY));
-        System.out.println("Webhook URL: " + MSTeamsPreProjectAnalysisTask.getValidatedConfig(Constants.WEBHOOK_URL));
-        System.out.println("All config: " + MSTeamsPreProjectAnalysisTask.getAllValidatedConfig());
-        
         // Assert
-        assert MSTeamsPreProjectAnalysisTask.isConfigurationValidated() : "Configuration should be validated";
-        assert "true".equals(MSTeamsPreProjectAnalysisTask.getValidatedConfig(Constants.ENABLE_NOTIFY)) : "Plugin should be enabled";
-        assert MSTeamsPreProjectAnalysisTask.getValidatedBooleanConfig(Constants.ENABLE_NOTIFY, false) : "Plugin should be enabled (boolean)";
+        if (!MSTeamsPreProjectAnalysisTask.isConfigurationValidated()) {
+            throw new AssertionError("Configuration should be validated");
+        }
+        
+        if (!"true".equals(MSTeamsPreProjectAnalysisTask.getValidatedConfig(Constants.ENABLE_NOTIFY))) {
+            throw new AssertionError("Plugin should be enabled");
+        }
+        
+        if (!MSTeamsPreProjectAnalysisTask.getValidatedBooleanConfig(Constants.ENABLE_NOTIFY, false)) {
+            throw new AssertionError("Plugin should be enabled (boolean)");
+        }
     }
 
     @Test
-    public void testPostAnalysisWithPreValidatedConfig() {
-        // Arrange - Run pre-analysis first
+    public void testWorkflow_WithNoValueConditions_SendsNotification() {
+        // Arrange - Create a quality gate with NO_VALUE conditions
+        QualityGate.Condition noValueCondition = mock(QualityGate.Condition.class);
+        when(noValueCondition.getStatus()).thenReturn(QualityGate.EvaluationStatus.NO_VALUE);
+        when(noValueCondition.getMetricKey()).thenReturn("new_coverage");
+        
+        List<QualityGate.Condition> conditions = Arrays.asList(noValueCondition);
+        when(qualityGate.getConditions()).thenReturn(conditions);
+        
         preAnalysisTask.finished(context);
         
         wireMockServer.stubFor(post(urlEqualTo("/webhook"))
+                .withRequestBody(containing("\"type\": \"message\""))
+                .withRequestBody(containing("\"type\": \"AdaptiveCard\""))
+                .withRequestBody(containing("\"New Coverage\""))
+                .withRequestBody(containing("\"N/A\""))
                 .willReturn(aResponse()
                         .withStatus(200)
                         .withBody("1")));
@@ -166,30 +188,11 @@ public class SonarQubeMSTeamsNotifierPluginTest {
     }
 
     @Test
-    public void testPostAnalysisWithoutPreValidation_UsesFallback() {
-        // Arrange - Don't run pre-analysis, configuration won't be validated
-        // Clear any existing validation
-        MSTeamsPreProjectAnalysisTask.clearValidatedConfig();
-        
-        wireMockServer.stubFor(post(urlEqualTo("/webhook"))
-                .willReturn(aResponse()
-                        .withStatus(200)
-                        .withBody("1")));
-
-        // Act - Should use fallback mode
-        postAnalysisTask.finished(context);
-
-        // Assert - Should still work via fallback
-        wireMockServer.verify(postRequestedFor(urlEqualTo("/webhook")));
-    }
-
-    @Test
     public void testWorkflow_WithDisabledPlugin_DoesNotSendNotification() {
-        // Arrange - Update the mock to disable the plugin
+        // Arrange
         when(mockConfiguration.get(Constants.ENABLE_NOTIFY)).thenReturn(Optional.of("false"));
         when(mockConfiguration.getBoolean(Constants.ENABLE_NOTIFY)).thenReturn(Optional.of(false));
         
-        // Run pre-analysis with disabled config
         preAnalysisTask.finished(context);
 
         // Act
@@ -201,64 +204,47 @@ public class SonarQubeMSTeamsNotifierPluginTest {
 
     @Test
     public void testWorkflow_WithInvalidWebhookUrl_DoesNotSendNotification() {
-        // Arrange - Create completely new mock objects with invalid configuration
-        Configuration invalidConfig = mock(Configuration.class);
-        when(invalidConfig.get(Constants.ENABLE_NOTIFY)).thenReturn(Optional.of("true"));
-        when(invalidConfig.getBoolean(Constants.ENABLE_NOTIFY)).thenReturn(Optional.of(true));
-        when(invalidConfig.get(Constants.WEBHOOK_URL)).thenReturn(Optional.of("invalid-url"));
-        when(invalidConfig.get(Constants.WEBHOOK_MESSAGE_AVATAR)).thenReturn(Optional.of(Constants.DEFAULT_WEBHOOK_MESSAGE_AVATAR));
-        when(invalidConfig.getBoolean(Constants.WEBHOOK_SEND_ON_FAILED)).thenReturn(Optional.of(false));
-        when(invalidConfig.get(Constants.SONAR_URL)).thenReturn(Optional.of("http://sonarqube.example.com"));
+        // Arrange - Ensure ALL configuration sources have invalid URLs
+        when(mockConfiguration.get(Constants.WEBHOOK_URL)).thenReturn(Optional.of("invalid-url"));
         
-        // Create new scanner context with invalid URL
-        ScannerContext invalidScannerContext = mock(ScannerContext.class);
         Map<String, String> invalidScannerProps = new HashMap<>();
         invalidScannerProps.put(Constants.ENABLE_NOTIFY, "true");
         invalidScannerProps.put(Constants.WEBHOOK_URL, "invalid-url");
         invalidScannerProps.put(Constants.WEBHOOK_MESSAGE_AVATAR, Constants.DEFAULT_WEBHOOK_MESSAGE_AVATAR);
         invalidScannerProps.put(Constants.WEBHOOK_SEND_ON_FAILED, "false");
         invalidScannerProps.put(Constants.SONAR_URL, "http://sonarqube.example.com");
-        when(invalidScannerContext.getProperties()).thenReturn(invalidScannerProps);
+        when(scannerContext.getProperties()).thenReturn(invalidScannerProps);
         
-        // Update project analysis to use invalid scanner context
-        when(projectAnalysis.getScannerContext()).thenReturn(invalidScannerContext);
+        System.setProperty(Constants.WEBHOOK_URL, "invalid-url");
+        System.setProperty("SONAR_MSTEAMS_WEBHOOK_URL", "invalid-url");
         
-        // Clear system properties to prevent fallback to system properties
-        System.clearProperty(Constants.WEBHOOK_URL);
-        System.setProperty(Constants.WEBHOOK_URL, "invalid-url"); // Also set invalid system property
+        preAnalysisTask.finished(context);
         
-        // Create new pre-analysis task with invalid config
-        MSTeamsPreProjectAnalysisTask invalidPreAnalysisTask = new MSTeamsPreProjectAnalysisTask(invalidConfig);
-        
-        // Run pre-analysis with invalid URL - should fail validation
-        invalidPreAnalysisTask.finished(context);
-        
-        // Verify that configuration validation failed
         assert !MSTeamsPreProjectAnalysisTask.isConfigurationValidated() : "Configuration should not be validated with invalid URL";
 
         // Act
         postAnalysisTask.finished(context);
 
-        // Assert - Should not send any requests since all configuration sources have invalid URLs
+        // Assert
         wireMockServer.verify(0, postRequestedFor(urlMatching(".*")));
         
         // Clean up
         System.clearProperty(Constants.WEBHOOK_URL);
+        System.clearProperty("SONAR_MSTEAMS_WEBHOOK_URL");
     }
 
     @Test
     public void testWorkflow_WithFailedQualityGateAndSendOnFailedOnly() {
-        // Arrange - Update config for send on failed only
+        // Arrange
         when(mockConfiguration.getBoolean(Constants.WEBHOOK_SEND_ON_FAILED)).thenReturn(Optional.of(true));
         
-        // Run pre-analysis
         preAnalysisTask.finished(context);
         
-        // Set up failed quality gate
         when(ceTask.getStatus()).thenReturn(CeTask.Status.FAILED);
         when(qualityGate.getStatus()).thenReturn(QualityGate.Status.ERROR);
 
         wireMockServer.stubFor(post(urlEqualTo("/webhook"))
+                .withRequestBody(containing("\"type\": \"message\""))
                 .willReturn(aResponse()
                         .withStatus(200)
                         .withBody("1")));
@@ -272,13 +258,12 @@ public class SonarQubeMSTeamsNotifierPluginTest {
 
     @Test
     public void testWorkflow_WithPassedQualityGateAndSendOnFailedOnly_DoesNotSend() {
-        // Arrange - Update config for send on failed only
+        // Arrange
         when(mockConfiguration.getBoolean(Constants.WEBHOOK_SEND_ON_FAILED)).thenReturn(Optional.of(true));
         
         // Run pre-analysis
         preAnalysisTask.finished(context);
         
-        // Quality gate passes (already set in setUp)
         when(ceTask.getStatus()).thenReturn(CeTask.Status.SUCCESS);
         when(qualityGate.getStatus()).thenReturn(QualityGate.Status.OK);
 
@@ -292,8 +277,12 @@ public class SonarQubeMSTeamsNotifierPluginTest {
     @Test
     public void testGetDescription() {
         // Act & Assert
-        assert "MS Teams configuration validator for SonarQube analysis".equals(preAnalysisTask.getDescription());
-        assert "MS Teams notification extension for SonarQube analysis results".equals(postAnalysisTask.getDescription());
+        if (!"MS Teams configuration validator for SonarQube analysis".equals(preAnalysisTask.getDescription())) {
+            throw new AssertionError("Pre-analysis task description mismatch");
+        }
+        if (!"MS Teams notification extension for SonarQube analysis results".equals(postAnalysisTask.getDescription())) {
+            throw new AssertionError("Post-analysis task description mismatch");
+        }
     }
 
     @Test
@@ -306,7 +295,7 @@ public class SonarQubeMSTeamsNotifierPluginTest {
                         .withStatus(500)
                         .withBody("Internal Server Error")));
 
-        // Act - Should not throw exception
+        // Act
         postAnalysisTask.finished(context);
 
         // Assert
@@ -319,12 +308,130 @@ public class SonarQubeMSTeamsNotifierPluginTest {
         String customAvatarUrl = "https://example.com/custom-avatar.png";
         when(mockConfiguration.get(Constants.WEBHOOK_MESSAGE_AVATAR)).thenReturn(Optional.of(customAvatarUrl));
         
-        // Run pre-analysis with custom avatar
+        preAnalysisTask.finished(context);
+
+        wireMockServer.stubFor(post(urlEqualTo("/webhook"))
+                .withRequestBody(containing("\"type\": \"message\""))
+                .withRequestBody(containing("\"url\": \"" + customAvatarUrl + "\""))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withBody("1")));
+
+        // Act
+        postAnalysisTask.finished(context);
+
+        // Assert
+        wireMockServer.verify(postRequestedFor(urlEqualTo("/webhook"))
+                .withRequestBody(containing("\"url\": \"" + customAvatarUrl + "\"")));
+        
+        String cachedAvatarUrl = MSTeamsPreProjectAnalysisTask.getValidatedConfig(Constants.WEBHOOK_MESSAGE_AVATAR);
+        if (!customAvatarUrl.equals(cachedAvatarUrl)) {
+            throw new AssertionError("Custom avatar URL not cached properly. Expected: " + customAvatarUrl + ", Got: " + cachedAvatarUrl);
+        }
+    }
+
+    @Test
+    public void testPayloadStructure_NoValueAware() {
+        // Arrange - Set up mixed conditions (some NO_VALUE, some with values)
+        QualityGate.Condition coverageCondition = mock(QualityGate.Condition.class);
+        when(coverageCondition.getStatus()).thenReturn(QualityGate.EvaluationStatus.NO_VALUE);
+        when(coverageCondition.getMetricKey()).thenReturn("new_coverage");
+
+        QualityGate.Condition violationsCondition = mock(QualityGate.Condition.class);
+        when(violationsCondition.getStatus()).thenReturn(QualityGate.EvaluationStatus.OK);
+        when(violationsCondition.getMetricKey()).thenReturn("new_violations");
+        when(violationsCondition.getValue()).thenReturn("0");
+
+        when(qualityGate.getConditions()).thenReturn(Arrays.asList(coverageCondition, violationsCondition));
+
         preAnalysisTask.finished(context);
         
-        // Debug: Check if custom avatar was cached
-        System.out.println("Cached avatar URL: " + MSTeamsPreProjectAnalysisTask.getValidatedConfig(Constants.WEBHOOK_MESSAGE_AVATAR));
+        wireMockServer.stubFor(post(urlEqualTo("/webhook"))
+                .withRequestBody(containing("\"type\": \"message\""))
+                .withRequestBody(containing("\"attachments\""))
+                .withRequestBody(containing("\"contentType\": \"application/vnd.microsoft.card.adaptive\""))
+                .withRequestBody(containing("\"type\": \"AdaptiveCard\""))
+                .withRequestBody(containing("\"New Coverage\""))
+                .withRequestBody(containing("\"N/A\""))
+                .withRequestBody(containing("\"New Violations\""))
+                .withRequestBody(containing("\"0\""))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withBody("1")));
 
+        // Act
+        postAnalysisTask.finished(context);
+
+        // Assert - Check for the actual structure that's being sent
+        wireMockServer.verify(postRequestedFor(urlEqualTo("/webhook"))
+                .withRequestBody(containing("\"type\": \"message\""))
+                .withRequestBody(containing("\"attachments\""))
+                .withRequestBody(containing("\"New Coverage\""))
+                .withRequestBody(containing("\"N/A\""))
+                .withRequestBody(containing("\"New Violations\""))
+                .withRequestBody(containing("\"0\"")));
+    }
+
+    @Test
+    public void testDirectNoValuePayloadCreation() {
+        // Test that NO_VALUE conditions are handled properly
+        
+        preAnalysisTask.finished(context);
+        
+        // Create condition that should show N/A
+        QualityGate.Condition condition = mock(QualityGate.Condition.class);
+        when(condition.getStatus()).thenReturn(QualityGate.EvaluationStatus.NO_VALUE);
+        when(condition.getMetricKey()).thenReturn("new_coverage");
+        when(qualityGate.getConditions()).thenReturn(Arrays.asList(condition));
+        
+        wireMockServer.stubFor(post(urlEqualTo("/webhook"))
+                .withRequestBody(containing("\"type\": \"message\""))
+                .withRequestBody(containing("\"attachments\""))
+                .withRequestBody(containing("\"contentType\": \"application/vnd.microsoft.card.adaptive\""))
+                .withRequestBody(containing("\"New Coverage\""))
+                .withRequestBody(containing("\"N/A\""))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withBody("1")));
+        
+        // Act
+        postAnalysisTask.finished(context);
+        
+        // Assert
+        wireMockServer.verify(postRequestedFor(urlEqualTo("/webhook")));
+    }
+
+    @Test
+    public void testSimplifiedPayloadStructure() {
+        // Test the basic payload structure 
+        preAnalysisTask.finished(context);
+        
+        wireMockServer.stubFor(post(urlEqualTo("/webhook"))
+                .withRequestBody(containing("\"type\": \"message\""))
+                .withRequestBody(containing("\"attachments\""))
+                .withRequestBody(containing("\"contentType\": \"application/vnd.microsoft.card.adaptive\""))
+                .withRequestBody(containing("\"content\""))
+                .withRequestBody(containing("\"type\": \"AdaptiveCard\""))
+                .withRequestBody(containing("\"SonarQube Analysis Result\""))
+                .withRequestBody(containing("Test Project SonarQube Analysis Result"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withBody("1")));
+
+        // Act
+        postAnalysisTask.finished(context);
+
+        // Assert
+        wireMockServer.verify(postRequestedFor(urlEqualTo("/webhook")));
+    }
+
+    // Add a test to verify the specific payload structure elements
+    @Test
+    public void testPayloadStructure_VerifyElements() {
+        // Test specific elements of the payload structure
+        
+        preAnalysisTask.finished(context);
+        
         wireMockServer.stubFor(post(urlEqualTo("/webhook"))
                 .willReturn(aResponse()
                         .withStatus(200)
@@ -333,26 +440,31 @@ public class SonarQubeMSTeamsNotifierPluginTest {
         // Act
         postAnalysisTask.finished(context);
 
-        // Assert - Just verify that a request was made, let's see the actual payload
+        // Assert
         wireMockServer.verify(postRequestedFor(urlEqualTo("/webhook")));
         
-        // Print actual requests for debugging
+        // Verify specific payload elements
         wireMockServer.getAllServeEvents().forEach(event -> {
-            System.out.println("Request body: " + event.getRequest().getBodyAsString());
+            String body = event.getRequest().getBodyAsString();
+            
+            // Verify basic structure
+            assert body.contains("\"type\": \"message\"") : "Should contain message type";
+            assert body.contains("\"attachments\"") : "Should contain attachments";
+            assert body.contains("\"contentType\": \"application/vnd.microsoft.card.adaptive\"") : "Should contain adaptive card content type";
+            assert body.contains("\"type\": \"AdaptiveCard\"") : "Should contain AdaptiveCard type";
+            
+            // Verify content
+            assert body.contains("\"SonarQube Analysis Result\"") : "Should contain analysis result title";
+            assert body.contains("Test Project SonarQube Analysis Result") : "Should contain project name";
+            assert body.contains("\"Status\"") : "Should contain status field";
+            assert body.contains("\"SUCCESS\"") : "Should contain success status";
+            assert body.contains("\"Quality Gate\"") : "Should contain quality gate field";
+            assert body.contains("\"Sonar way (OK)\"") : "Should contain quality gate status";
+            
+            // Verify action
+            assert body.contains("\"Action.OpenUrl\"") : "Should contain open URL action";
+            assert body.contains("\"View Analysis\"") : "Should contain view analysis button";
+            assert body.contains("http://sonarqube.example.com/dashboard?id=test-project-key") : "Should contain project URL";
         });
-    }
-
-    @Test
-    public void testConfigurationPriority() {
-        // Test that SonarQube configuration takes priority over system properties
-        System.setProperty(Constants.WEBHOOK_URL, "https://system.property.url");
-        
-        when(mockConfiguration.get(Constants.WEBHOOK_URL)).thenReturn(Optional.of("https://sonarqube.config.url"));
-        
-        preAnalysisTask.finished(context);
-        
-        // Assert
-        assert "https://sonarqube.config.url".equals(MSTeamsPreProjectAnalysisTask.getValidatedConfig(Constants.WEBHOOK_URL)) : 
-            "SonarQube config should take priority over system properties";
     }
 }

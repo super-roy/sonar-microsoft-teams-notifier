@@ -7,7 +7,7 @@
     <groupId>io.github.minhhoangvn</groupId>
     <artifactId>sonar-microsoft-teams-notifier</artifactId>
     <packaging>sonar-plugin</packaging>
-    <version>1.0</version>
+    <version>1.1</version>
     <licenses>
         <license>
             <name>The Apache Software License, Version 2.0</name>
@@ -25,6 +25,15 @@
             <organizationUrl>https://toilatester.blog/</organizationUrl>
             <roles>
                 <role>project owner</role>
+                <role>developer</role>
+            </roles>
+        </developer>
+        <developer>
+            <name>Roy Hsu</name>
+            <email>supermroyh@gmail.com</email>
+            <timezone>+7</timezone>
+            <organizationUrl>https://github.com/</organizationUrl>
+            <roles>
                 <role>developer</role>
             </roles>
         </developer>
@@ -127,10 +136,10 @@
                 <configuration>
                     <jarName>sonar-microsoft-teams-notifier</jarName>
                     <pluginKey>msteamsnotifier</pluginKey>
-                    <pluginName>Sonarqube Microsoft Teams Notify</pluginName>
+                    <pluginName>SonarQube Microsoft Teams Notify</pluginName>
                     <pluginClass>io.github.minhhoangvn.MSTeamsNotifyPlugin</pluginClass>
                     <pluginDescription>Plugin for notifying SonarQube result to Microsoft Teams</pluginDescription>
-                    <pluginDisplayVersion>1.0</pluginDisplayVersion>
+                    <pluginDisplayVersion>1.1</pluginDisplayVersion>
                     <pluginOrganizationName>toilatester</pluginOrganizationName>
                     <pluginOrganizationUrl>https://github.com/toilatester</pluginOrganizationUrl>
                     <pluginSourcesUrl>https://github.com/toilatester/sonar-microsoft-teams-notifier</pluginSourcesUrl>

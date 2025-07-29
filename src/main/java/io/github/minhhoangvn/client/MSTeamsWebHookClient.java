@@ -11,6 +11,7 @@ import java.util.concurrent.TimeUnit;
 
 public class MSTeamsWebHookClient {
 
+    private static final String APPLICATION_JSON = "application/json";
     private final OkHttpClient client;
 
     public MSTeamsWebHookClient() {
@@ -22,14 +23,14 @@ public class MSTeamsWebHookClient {
     }
 
     public Response sendNotify(String webhookUrl, String payload) throws IOException {
-        MediaType mediaType = MediaType.parse("application/json; charset=utf-8");
+        MediaType mediaType = MediaType.parse(APPLICATION_JSON);
         RequestBody requestBody = RequestBody.create(payload, mediaType);
         
         Request request = new Request.Builder()
                 .url(webhookUrl)
                 .post(requestBody)
-                .addHeader("Content-Type", "application/json")
-                .addHeader("Accept", "application/json")
+                .addHeader("Content-Type", APPLICATION_JSON)
+                .addHeader("Accept", APPLICATION_JSON)
                 .build();
                 
         return client.newCall(request).execute();
