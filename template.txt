@@ -1,0 +1,88 @@
+$adaptiveCard = @"
+{
+    "type": "AdaptiveCard",
+    "`$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+    "version": "1.5",
+    "body": [
+        {
+            "type": "TextBlock",
+            "size": "Medium",
+            "weight": "Bolder",
+            "text": "SonarQube Analysis Result"
+        },
+        {
+            "type": "ColumnSet",
+            "columns": [
+                {
+                    "type": "Column",
+                    "items": [
+                        {
+                            "type": "Image",
+                            "style": "Person",
+                            "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Super_Micro_Computer_Logo.svg/330px-Super_Micro_Computer_Logo.svg.png",
+                            "altText": "Supermicro IT2 DevOps Team",
+                            "size": "Small"
+                        }
+                    ],
+                    "width": "auto"
+                },
+                {
+                    "type": "Column",
+                    "items": [
+                        {
+                            "type": "TextBlock",
+                            "weight": "Bolder",
+                            "text": "Supermicro IT2 DevOps Team",
+                            "wrap": true
+                        }
+                    ],
+                    "width": "stretch"
+                }
+            ]
+        },
+        {
+            "type": "TextBlock",
+            "text": "$project SonarQube Analysis Result",
+            "wrap": true,
+            "weight": "Bolder",
+            "color": "Accent"
+        },
+        {
+            "type": "FactSet",
+            "facts": [
+                {
+                    "title": "Status",
+                    "value": "$status"
+                },
+                {
+                    "title": "Quality Gate",
+                    "value": "$qualityGate"
+                },
+                {
+                    "title": "New Violations",
+                    "value": "$newViolations"
+                },
+                {
+                    "title": "New Coverage",
+                    "value": "$newCoverage"
+                },
+                {
+                    "title": "New Duplicated Lines Density",
+                    "value": "$newDuplicatedLinesDensity"
+                },
+                {
+                    "title": "New Security Hotspots Reviewed",
+                    "value": "$newSecurityHotspotsReviewed"
+                }
+            ]
+        }
+    ],
+    "actions": [
+        {
+            "type": "Action.OpenUrl",
+            "title": "View Analysis",
+            "url": "$projectURL"
+        }
+    ]
+}
+"@
