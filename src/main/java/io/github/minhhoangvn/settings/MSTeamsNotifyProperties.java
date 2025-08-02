@@ -18,7 +18,8 @@ public class MSTeamsNotifyProperties {
             getEnableNotifyProperty(),
             getWebhookUrlProperty(),
             getWebhookMessageAvatarProperty(),
-            getWebhookSendOnFailedProperty()
+            getWebhookSendOnFailedProperty(),
+            getWebhookTeamNameProperty()
         );
     }
 
@@ -63,6 +64,17 @@ public class MSTeamsNotifyProperties {
                 .type(PropertyType.BOOLEAN)
                 .defaultValue(String.valueOf(Constants.DEFAULT_WEBHOOK_SEND_ON_FAILED))
                 .index(3)
+                .build();
+    }
+
+    public static PropertyDefinition getWebhookTeamNameProperty() {
+        return PropertyDefinition.builder(Constants.WEBHOOK_TEAM_NAME)
+                .name("Team Name")
+                .description("Team name to display in MS Teams notifications")
+                .category(Constants.CATEGORY)
+                .type(PropertyType.STRING)
+                .defaultValue(Constants.DEFAULT_WEBHOOK_TEAM_NAME)
+                .index(4)
                 .build();
     }
 }

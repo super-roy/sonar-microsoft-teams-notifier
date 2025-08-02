@@ -134,18 +134,18 @@ public class AdaptiveCardsFormatTest {
     }
 
     @Test
-    public void testCreateMessageCardJSONPayload_WithSupermicroLogo() {
+    public void testCreateMessageCardJSONPayload_WithDefaultLogo() {
         // Arrange
         when(qualityGate.getConditions()).thenReturn(Collections.emptyList());
         String projectUrl = "http://sonarqube.example.com/dashboard?id=test-project-key";
 
-        // Act - Use the default constructor which should use the Supermicro logo
+        // Act - Use the default constructor which should use the default logo
         String result = AdaptiveCardsFormat.createMessageCardJSONPayload(projectAnalysis, projectUrl);
 
         // Assert
-        Assert.assertTrue(result.contains("\"url\": \"https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Super_Micro_Computer_Logo.svg/330px-Super_Micro_Computer_Logo.svg.png\""));
-        Assert.assertTrue(result.contains("\"altText\": \"Supermicro IT2 DevOps Team\""));
-        Assert.assertTrue(result.contains("\"text\": \"Supermicro IT2 DevOps Team\""));
+        Assert.assertTrue(result.contains("\"url\": \"https://docs.sonarqube.org/latest/images/sonarqube-logo.svg\""));
+        Assert.assertTrue(result.contains("\"altText\": \"DevOps Team\""));
+        Assert.assertTrue(result.contains("\"text\": \"DevOps Team\""));
     }
 
     @Test
@@ -207,7 +207,7 @@ public class AdaptiveCardsFormatTest {
 
         // Assert
         Assert.assertTrue(result.contains("\"url\": \"" + customImageUrl + "\""));
-        Assert.assertTrue(result.contains("\"altText\": \"Supermicro IT2 DevOps Team\""));
+        Assert.assertTrue(result.contains("\"altText\": \"DevOps Team\""));
     }
 
     @Test
@@ -220,7 +220,7 @@ public class AdaptiveCardsFormatTest {
         // Act
         String result = AdaptiveCardsFormat.createMessageCardJSONPayload(projectAnalysis, projectUrl, emptyImageUrl);
 
-        // Assert - Should use default Supermicro logo
-        Assert.assertTrue(result.contains("\"url\": \"https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Super_Micro_Computer_Logo.svg/330px-Super_Micro_Computer_Logo.svg.png\""));
+        // Assert - Should use default logo
+        Assert.assertTrue(result.contains("\"url\": \"https://docs.sonarqube.org/latest/images/sonarqube-logo.svg\""));
     }
 }

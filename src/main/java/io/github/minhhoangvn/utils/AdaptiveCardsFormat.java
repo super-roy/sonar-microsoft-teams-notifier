@@ -3,14 +3,27 @@ package io.github.minhhoangvn.utils;
 import org.apache.commons.lang.StringUtils;
 import org.sonar.api.ce.posttask.PostProjectAnalysisTask.ProjectAnalysis;
 import org.sonar.api.ce.posttask.QualityGate;
+import org.sonar.api.config.Configuration;
+import org.sonar.api.utils.log.Logger;
+import org.sonar.api.utils.log.Loggers;
 
 import java.util.Map;
 import java.util.stream.Collectors;
 
 public class AdaptiveCardsFormat {
 
+    private static final Logger LOGGER = Loggers.get(AdaptiveCardsFormat.class);
+    private static Configuration configuration;
+
     private AdaptiveCardsFormat() {
         // Utility class
+    }
+
+    /**
+     * Set the SonarQube configuration for accessing properties at runtime.
+     */
+    public static void setConfiguration(Configuration config) {
+        configuration = config;
     }
 
     public static String createMessageCardJSONPayload(ProjectAnalysis analysis, String projectUrl) {
@@ -24,11 +37,30 @@ public class AdaptiveCardsFormat {
 
         // Use default image URL if provided imageUrl is null or empty
         String finalImageUrl = StringUtils.isEmpty(imageUrl) ? Constants.DEFAULT_WEBHOOK_MESSAGE_AVATAR : imageUrl;
+        String teamName = getTeamNameFromConfig();
         
-        return createAdaptiveCardTemplate(analysis, projectUrl, finalImageUrl);
+        return createAdaptiveCardTemplate(analysis, projectUrl, finalImageUrl, teamName);
     }
 
-    private static String createAdaptiveCardTemplate(ProjectAnalysis analysis, String projectUrl, String imageUrl) {
+    public static String getTeamNameFromConfig() {
+        if (configuration != null) {
+            String teamName = configuration.get(Constants.WEBHOOK_TEAM_NAME).orElse(Constants.DEFAULT_WEBHOOK_TEAM_NAME);
+            LOGGER.info("AdaptiveCardsFormat.getTeamNameFromConfig() - configuration not null");
+            LOGGER.info("Constants.WEBHOOK_TEAM_NAME = {}", Constants.WEBHOOK_TEAM_NAME);
+            LOGGER.info("Constants.DEFAULT_WEBHOOK_TEAM_NAME = '{}'", Constants.DEFAULT_WEBHOOK_TEAM_NAME);
+            LOGGER.info("configuration.get() returned = '{}'", teamName);
+            if (!StringUtils.isEmpty(teamName)) {
+                LOGGER.info("Returning configured team name: '{}'", teamName);
+                return teamName;
+            }
+        } else {
+            LOGGER.warn("AdaptiveCardsFormat.getTeamNameFromConfig() - configuration is null!");
+        }
+        LOGGER.info("Returning fallback team name: 'DevOps Team'");
+        return "DevOps Team"; // fallback if configuration is not available or empty
+    }
+
+    private static String createAdaptiveCardTemplate(ProjectAnalysis analysis, String projectUrl, String imageUrl, String teamName) {
         String projectName = analysis.getProject().getName();
         String status = getAnalysisStatus(analysis);
         String qualityGate = getQualityGateInfo(analysis);
@@ -63,7 +95,7 @@ public class AdaptiveCardsFormat {
                                                     "type": "Image",
                                                     "style": "Person",
                                                     "url": "%s",
-                                                    "altText": "Supermicro IT2 DevOps Team",
+                                                    "altText": "%s",
                                                     "size": "Small"
                                                 }
                                             ],
@@ -75,7 +107,7 @@ public class AdaptiveCardsFormat {
                                                 {
                                                     "type": "TextBlock",
                                                     "weight": "Bolder",
-                                                    "text": "Supermicro IT2 DevOps Team",
+                                                    "text": "%s",
                                                     "wrap": true
                                                 }
                                             ],
@@ -135,6 +167,8 @@ public class AdaptiveCardsFormat {
             }
             """,
             imageUrl,           // %s - Image URL in the Image element
+            teamName,           // %s - Team name as altText
+            teamName,           // %s - Team name in TextBlock
             projectName,        // %s - Project name in the TextBlock 
             status,             // %s - Status value in FactSet
             qualityGate,        // %s - Quality Gate value in FactSet
