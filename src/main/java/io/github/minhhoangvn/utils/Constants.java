@@ -15,7 +15,7 @@ public class Constants {
     // Default values
     public static final boolean DEFAULT_ENABLE_NOTIFY = true;
     public static final boolean DEFAULT_WEBHOOK_SEND_ON_FAILED = false;
-    public static final String DEFAULT_WEBHOOK_TEAM_NAME = "";
+    public static final String DEFAULT_WEBHOOK_TEAM_NAME = "DevOps Team";
     
     private Constants() {
         // Utility class - prevent instantiation

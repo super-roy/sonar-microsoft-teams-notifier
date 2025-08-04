@@ -56,8 +56,8 @@ public class AdaptiveCardsFormat {
         } else {
             LOGGER.warn("AdaptiveCardsFormat.getTeamNameFromConfig() - configuration is null!");
         }
-        LOGGER.info("Returning fallback team name: 'DevOps Team'");
-        return "DevOps Team"; // fallback if configuration is not available or empty
+        LOGGER.info("Returning fallback team name: {}", Constants.DEFAULT_WEBHOOK_TEAM_NAME);
+        return Constants.DEFAULT_WEBHOOK_TEAM_NAME; // fallback if configuration is not available or empty
     }
 
     private static String createAdaptiveCardTemplate(ProjectAnalysis analysis, String projectUrl, String imageUrl, String teamName) {

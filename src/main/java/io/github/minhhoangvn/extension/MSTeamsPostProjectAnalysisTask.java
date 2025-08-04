@@ -56,7 +56,7 @@ public class MSTeamsPostProjectAnalysisTask implements PostProjectAnalysisTask {
             LOGGER.info("  - Send on failed only: {}", sendOnFailedOnly);
             LOGGER.info("  - Base URL: {}", baseUrl.isEmpty() ? "[DEFAULT]" : baseUrl);
             LOGGER.info("  - Team name: {}", StringUtils.isEmpty(teamName) ? "[NOT SET - will use 'DevOps Team']" : teamName);
-            
+
             if (StringUtils.isEmpty(webhookUrl)) {
                 LOGGER.error("MS Teams Plugin: Webhook URL not configured (this should have been caught in pre-validation)");
                 return;
