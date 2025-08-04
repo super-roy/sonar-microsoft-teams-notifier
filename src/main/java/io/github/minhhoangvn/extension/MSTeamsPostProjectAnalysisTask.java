@@ -48,12 +48,14 @@ public class MSTeamsPostProjectAnalysisTask implements PostProjectAnalysisTask {
             String avatarUrl = MSTeamsPreProjectAnalysisTask.getValidatedConfig(Constants.WEBHOOK_MESSAGE_AVATAR, Constants.DEFAULT_WEBHOOK_MESSAGE_AVATAR);
             boolean sendOnFailedOnly = MSTeamsPreProjectAnalysisTask.getValidatedBooleanConfig(Constants.WEBHOOK_SEND_ON_FAILED, Constants.DEFAULT_WEBHOOK_SEND_ON_FAILED);
             String baseUrl = MSTeamsPreProjectAnalysisTask.getValidatedConfig(Constants.SONAR_URL, "");
+            String teamName = MSTeamsPreProjectAnalysisTask.getValidatedConfig(Constants.WEBHOOK_TEAM_NAME, Constants.DEFAULT_WEBHOOK_TEAM_NAME);
             
             LOGGER.info("MS Teams Plugin: Using pre-validated configuration:");
             LOGGER.info("  - Webhook URL: {}", webhookUrl.isEmpty() ? "[NOT SET]" : webhookUrl);
             LOGGER.info("  - Avatar URL: {}", avatarUrl);
             LOGGER.info("  - Send on failed only: {}", sendOnFailedOnly);
             LOGGER.info("  - Base URL: {}", baseUrl.isEmpty() ? "[DEFAULT]" : baseUrl);
+            LOGGER.info("  - Team name: {}", StringUtils.isEmpty(teamName) ? "[NOT SET - will use 'DevOps Team']" : teamName);
             
             if (StringUtils.isEmpty(webhookUrl)) {
                 LOGGER.error("MS Teams Plugin: Webhook URL not configured (this should have been caught in pre-validation)");
@@ -181,6 +183,9 @@ public class MSTeamsPostProjectAnalysisTask implements PostProjectAnalysisTask {
     private void sendNotification(Context context, String webhookUrl, String avatarUrl, 
                         boolean sendOnFailedOnly, String baseUrl, String configSource) {
         try {
+            // Inject pre-validated configuration into AdaptiveCardsFormat
+            AdaptiveCardsFormat.setConfiguration(new PreValidatedConfiguration());
+            
             ProjectAnalysis projectAnalysis = context.getProjectAnalysis();
             LOGGER.info("MS Teams Plugin: Project analysis details:");
             LOGGER.info("  - Project name: {}", projectAnalysis.getProject().getName());
@@ -323,7 +328,8 @@ public class MSTeamsPostProjectAnalysisTask implements PostProjectAnalysisTask {
             String status = projectAnalysis.getCeTask().getStatus().name();
             String qgStatus = qualityGate != null ? qualityGate.getStatus().name() : "UNKNOWN";
             String qgName = qualityGate != null ? qualityGate.getName() : "Unknown";
-            String teamName = "Supermicro IT2 DevOps Team";
+            // Use the same configuration source as AdaptiveCardsFormat by calling it directly
+            String teamName = AdaptiveCardsFormat.getTeamNameFromConfig();
 
             // Build facts array with safe condition handling
             StringBuilder factsJson = new StringBuilder();
@@ -449,6 +455,31 @@ public class MSTeamsPostProjectAnalysisTask implements PostProjectAnalysisTask {
             case "new_reliability_rating": return "New Reliability Rating";
             case "new_security_rating": return "New Security Rating";
             default: return metricKey.replace("_", " ").toUpperCase();
+        }
+    }
+    
+    /**
+     * Configuration wrapper that uses pre-validated configuration from MSTeamsPreProjectAnalysisTask
+     */
+    private static class PreValidatedConfiguration implements org.sonar.api.config.Configuration {
+        
+        @Override
+        public java.util.Optional<String> get(String key) {
+            String value = MSTeamsPreProjectAnalysisTask.getValidatedConfig(key, "");
+            LOGGER.info("PreValidatedConfiguration.get({}) = '{}' (empty: {})", key, value, StringUtils.isEmpty(value));
+            return StringUtils.isEmpty(value) ? java.util.Optional.empty() : java.util.Optional.of(value);
+        }
+        
+        @Override
+        public boolean hasKey(String key) {
+            boolean has = get(key).isPresent();
+            LOGGER.info("PreValidatedConfiguration.hasKey({}) = {}", key, has);
+            return has;
+        }
+        
+        @Override
+        public String[] getStringArray(String key) {
+            return get(key).map(value -> value.split(",")).orElse(new String[0]);
         }
     }
 }

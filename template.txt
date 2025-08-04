@@ -19,8 +19,8 @@ $adaptiveCard = @"
                         {
                             "type": "Image",
                             "style": "Person",
-                            "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Super_Micro_Computer_Logo.svg/330px-Super_Micro_Computer_Logo.svg.png",
-                            "altText": "Supermicro IT2 DevOps Team",
+                            "url": "https://docs.sonarqube.org/latest/images/sonarqube-logo.svg",
+                            "altText": "DevOps Team",
                             "size": "Small"
                         }
                     ],
@@ -32,7 +32,7 @@ $adaptiveCard = @"
                         {
                             "type": "TextBlock",
                             "weight": "Bolder",
-                            "text": "Supermicro IT2 DevOps Team",
+                            "text": "DevOps Team",
                             "wrap": true
                         }
                     ],

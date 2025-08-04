@@ -110,7 +110,12 @@ public class MSTeamsPreProjectAnalysisTask implements PostProjectAnalysisTask {
         }
         VALIDATED_CONFIG.put(Constants.SONAR_URL, baseUrl);
         
-        // 6. Test webhook connectivity (optional)
+        // 6. Load team name (optional)
+        String teamName = loadStringConfig(Constants.WEBHOOK_TEAM_NAME, Constants.DEFAULT_WEBHOOK_TEAM_NAME);
+        VALIDATED_CONFIG.put(Constants.WEBHOOK_TEAM_NAME, teamName);
+        LOGGER.info("MS Teams Plugin: Team name = '{}'", StringUtils.isEmpty(teamName) ? "[NOT SET - will use 'DevOps Team']" : teamName);
+        
+        // 7. Test webhook connectivity (optional)
         if (Boolean.parseBoolean(System.getProperty("sonar.msteams.test.webhook", "false"))) {
             testWebhookConnectivity(webhookUrl);
         }

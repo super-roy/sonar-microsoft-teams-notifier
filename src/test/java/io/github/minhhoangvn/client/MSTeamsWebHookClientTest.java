@@ -178,8 +178,8 @@ public class MSTeamsWebHookClientTest {
                 "                        {\n" +
                 "                            \"type\": \"Image\",\n" +
                 "                            \"style\": \"Person\",\n" +
-                "                            \"url\": \"https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Super_Micro_Computer_Logo.svg/330px-Super_Micro_Computer_Logo.svg.png\",\n" +
-                "                            \"altText\": \"Supermicro IT2 DevOps Team\",\n" +
+                "                            \"url\": \"https://docs.sonarqube.org/latest/images/sonarqube-logo.svg\",\n" +
+                "                            \"altText\": \"DevOps Team\",\n" +
                 "                            \"size\": \"Small\"\n" +
                 "                        }\n" +
                 "                    ],\n" +
@@ -191,7 +191,7 @@ public class MSTeamsWebHookClientTest {
                 "                        {\n" +
                 "                            \"type\": \"TextBlock\",\n" +
                 "                            \"weight\": \"Bolder\",\n" +
-                "                            \"text\": \"Supermicro IT2 DevOps Team\",\n" +
+                "                            \"text\": \"DevOps Team\",\n" +
                 "                            \"wrap\": true\n" +
                 "                        }\n" +
                 "                    ],\n" +
